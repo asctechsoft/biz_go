@@ -1,0 +1,220 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/enums.dart';
+import '../../core/theme.dart';
+import '../../models/app_user.dart';
+import '../../services/auth_service.dart';
+import '../../services/db.dart';
+import '../../widgets/common.dart';
+
+/// §3 — Chủ tạo & quản lý tài khoản nhân viên (Kiểm hàng) và tài xế (Giao hàng).
+class UserManagementScreen extends StatelessWidget {
+  const UserManagementScreen({super.key});
+
+  // Chủ chỉ tạo được 2 vai trò này; tài khoản Chủ giữ duy nhất.
+  static const _creatableRoles = [UserRole.checker, UserRole.shipper];
+
+  @override
+  Widget build(BuildContext context) {
+    final db = context.read<Db>();
+    return Scaffold(
+      appBar: AppBar(title: const Text('Quản lý người dùng')),
+      body: StreamBuilder<List<AppUser>>(
+        stream: db.users(),
+        builder: (context, snap) {
+          if (!snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final users = snap.data!;
+          return ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: users.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, i) {
+              final u = users[i];
+              return Card(
+                child: ListTile(
+                  leading: Avatar(u.name, size: 42),
+                  title: Text(u.name,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text('${u.role.label} · ${u.phone}'),
+                  trailing: u.role == UserRole.owner
+                      ? const Chip(
+                          label: Text('Chủ',
+                              style: TextStyle(
+                                  fontSize: 11, color: AppColors.primary)),
+                          backgroundColor: AppColors.primaryLight,
+                          side: BorderSide.none,
+                        )
+                      : Switch(
+                          value: u.active,
+                          onChanged: (v) => db.setUserActive(u.id, v),
+                        ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: AppColors.primary,
+        onPressed: () => _createUser(context),
+        icon: const Icon(Icons.person_add, color: Colors.white),
+        label: const Text('Thêm', style: TextStyle(color: Colors.white)),
+      ),
+    );
+  }
+
+  Future<void> _createUser(BuildContext context) async {
+    final nameC = TextEditingController();
+    final phoneC = TextEditingController();
+    final passC = TextEditingController(text: '123456');
+    UserRole role = UserRole.shipper;
+    String? error;
+    bool busy = false;
+    final auth = AuthService();
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              left: 16,
+              right: 16,
+              top: 16),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Thêm người dùng',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 16),
+                if (error != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border:
+                          Border.all(color: AppColors.danger.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.error_outline,
+                          color: AppColors.danger, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: Text(error!,
+                              style: const TextStyle(
+                                  color: AppColors.danger,
+                                  fontWeight: FontWeight.w600))),
+                    ]),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                TextField(
+                  controller: nameC,
+                  onChanged: (_) {
+                    if (error != null) setSheet(() => error = null);
+                  },
+                  decoration: const InputDecoration(labelText: 'Họ tên'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: phoneC,
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  onChanged: (_) {
+                    if (error != null) setSheet(() => error = null);
+                  },
+                  decoration: const InputDecoration(
+                      labelText: 'Số điện thoại (dùng để đăng nhập)'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: passC,
+                  decoration: const InputDecoration(
+                      labelText: 'Mật khẩu (tối thiểu 6 ký tự)'),
+                ),
+                const SizedBox(height: 12),
+                const Text('Vai trò',
+                    style: TextStyle(
+                        fontSize: 13, color: AppColors.textSecondary)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final r in _creatableRoles)
+                      ChoiceChip(
+                        label: Text(r.label),
+                        selected: role == r,
+                        onSelected: (_) => setSheet(() => role = r),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final phone = phoneC.text.trim();
+                          if (nameC.text.trim().isEmpty) {
+                            setSheet(() => error = 'Vui lòng nhập họ tên');
+                            return;
+                          }
+                          if (phone.length < 8) {
+                            setSheet(() =>
+                                error = 'Số điện thoại không hợp lệ');
+                            return;
+                          }
+                          if (passC.text.length < 6) {
+                            setSheet(() =>
+                                error = 'Mật khẩu tối thiểu 6 ký tự');
+                            return;
+                          }
+                          setSheet(() => busy = true);
+                          try {
+                            await auth.createUserAsAdmin(
+                              phone: phone,
+                              password: passC.text,
+                              name: nameC.text.trim(),
+                              role: role,
+                            );
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (context.mounted) {
+                              toast(context,
+                                  'Đã tạo tài khoản ${nameC.text.trim()}');
+                            }
+                          } catch (e) {
+                            final msg = e.toString().contains('email-already-in-use')
+                                ? 'Số điện thoại này đã có tài khoản'
+                                : 'Lỗi tạo tài khoản: $e';
+                            setSheet(() {
+                              busy = false;
+                              error = msg;
+                            });
+                          }
+                        },
+                  child: busy
+                      ? const SizedBox(
+                          height: 22,
+                          width: 22,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Text('Tạo tài khoản'),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
