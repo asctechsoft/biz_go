@@ -1,3 +1,161 @@
-# biz_go
+# BizGo
 
-BizGo — Quản lý bán hàng, giao hàng, công nợ (Flutter + Firebase).
+Ứng dụng mobile **quản lý bán hàng – giao hàng – công nợ** cho xưởng sản xuất/bán lẻ (khoai lang, ngô chiên…).
+Flutter + Firebase. Một đơn hàng có đầy đủ vòng đời: **tạo đơn → kho chuẩn bị → đóng hàng → xếp chuyến → giao → thu tiền → công nợ → báo cáo**.
+
+> Tài liệu nghiệp vụ gốc: `Dac_ta_nghiep_vu_App_Ban_Hang_Giao_Hang_Mobile.docx`.
+
+---
+
+## 1. Công nghệ
+
+| Mảng | Dùng |
+|------|------|
+| UI | Flutter (Material 3), `go_router`, `provider` |
+| Backend | Firebase **Auth** (email/password) + **Cloud Firestore** |
+| Biểu đồ | `fl_chart` (donut, line) |
+| Ảnh | `image_picker` + `flutter_image_compress` — **lưu local trên máy**, Firestore chỉ giữ đường dẫn |
+| Push | `firebase_messaging` (app) + **noti-server** Node.js (Admin SDK) |
+| Khác | `flutter_slidable`, `url_launcher`, `flutter_launcher_icons` |
+
+- **Firebase project:** `bizgo-877df` · **Android package:** `com.asc.bizgo`
+- Auth dùng email/password nhưng **đăng nhập bằng SĐT**: SĐT được map thành `<số>@bizgo.local`.
+- Tiền lưu **số nguyên (đồng)**, không dùng float.
+
+---
+
+## 2. Yêu cầu môi trường
+
+- Flutter SDK (Dart ≥ 3.11).
+- Android SDK / thiết bị hoặc emulator.
+- Node.js ≥ 18 (chỉ cho noti-server).
+- File **`google-services.json`** đã có sẵn trong repo (`android/app/`).
+- File **service account** (`bizgo-877df-firebase-adminsdk-*.json`) **KHÔNG có trong git** (bảo mật) — chỉ cần cho noti-server, xin từ chủ project.
+
+---
+
+## 3. Cấu hình Firebase (bắt buộc — không thì login fail)
+
+1. **Authentication → Sign-in method → bật Email/Password.**
+2. **Firestore → Rules** (giai đoạn dev):
+   ```
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /{document=**} {
+         allow read, write: if request.auth != null;
+       }
+     }
+   }
+   ```
+3. (Tuỳ chọn) Thêm SHA-1 nếu sau này dùng Google Sign-In / Phone Auth — **email/password không cần**.
+
+> Query trong app đều tránh composite index (lọc `where` rồi sort trong bộ nhớ), nên **không cần tạo index** thủ công.
+
+---
+
+## 4. Chạy app
+
+```bash
+flutter pub get
+flutter run                 # chạy debug lên máy/emulator
+flutter analyze             # kiểm tra lỗi
+```
+
+### Build APK
+```bash
+flutter build apk --release                 # 1 file (~40-55MB)
+flutter build apk --release --split-per-abi # tách theo CPU, arm64 ~18-25MB
+flutter build appbundle --release           # cho Google Play
+```
+APK ra tại `build/app/outputs/flutter-apk/`.
+
+### Icon launcher (khi đổi logo)
+```bash
+dart run flutter_launcher_icons   # đọc assets/images/logo_app.png
+```
+
+> VS Code: `Ctrl+Shift+B` = build apk release (đã cấu hình `.vscode/tasks.json`); `F5` = chạy debug.
+
+---
+
+## 5. Tài khoản demo
+
+Lần đầu ở màn login bấm nút vàng **"Tạo dữ liệu mẫu & đăng nhập demo"** → seed dữ liệu + tạo cả 3 tài khoản.
+Mật khẩu chung: `123456`.
+
+| SĐT | Vai trò | Thấy gì |
+|-----|---------|---------|
+| `0900000000` | **Chủ** (owner) | tất cả: đơn, khách, sản phẩm, báo cáo, quản lý người dùng, xe, nhật ký |
+| `0900000001` | **Kiểm hàng** (checker) | đơn, kho, đóng hàng, in phiếu |
+| `0900000002` | **Giao hàng** (shipper) | chỉ chuyến được phân công, giao đơn, thu COD |
+
+> Đăng nhập cũng **tự tạo** tài khoản demo nếu chưa có (miễn mật khẩu `123456`).
+
+---
+
+## 6. Phân quyền (RBAC) — 3 vai trò
+
+- **Chỉ 1 tài khoản Chủ.** Chủ vào **Cài đặt → Quản lý người dùng** tạo tài khoản Kiểm hàng / Giao hàng; họ tự đăng nhập.
+- Tạo tài khoản dùng **FirebaseApp phụ** nên Chủ **không bị đăng xuất** (không cần server).
+- **Tài xế = tài khoản Giao hàng.** Điều phối tạo chuyến chọn tài xế từ danh sách tài khoản Giao hàng; `trip.driverId = uid`. Tài xế login chỉ thấy **chuyến của mình**.
+
+Chặn ở 3 tầng: tab (bottom nav) · nút hành động · route guard. Xem `lib/core/permissions.dart`.
+
+---
+
+## 7. Push notification (noti-server)
+
+App ghi doc vào collection `notifications` kèm `targetRoles` mỗi khi có sự kiện. **noti-server** (Node, Admin SDK) lắng nghe realtime → gửi FCM tới đúng người theo vai trò.
+
+```bash
+cd noti-server
+cp .env.example .env          # trỏ tới file service account
+npm install
+npm start                     # chạy nền, lắng nghe notifications
+npm run test-send owner "Tiêu đề" "Nội dung"   # gửi thử
+```
+
+App phải lưu FCM token (`lib/services/push_service.dart` — tự chạy khi đăng nhập). Chi tiết: `noti-server/README.md`.
+
+---
+
+## 8. Cấu trúc thư mục
+
+```
+lib/
+├── core/            enums (bộ trạng thái), theme, router, permissions, formatters, demo_accounts
+├── models/          order, customer, product, payment, fleet, app_user, app_notification, audit_log
+├── providers/       auth_provider
+├── services/        db (Firestore gateway), auth_service, seed_service, image_service, push_service
+├── features/
+│   ├── auth/        login
+│   ├── splash/      màn khởi động
+│   ├── dashboard/   tổng quan (donut + line chart + việc cần làm)
+│   ├── orders/      danh sách, tạo đơn, chi tiết, hoá đơn, thu tiền
+│   ├── customers/   khách, địa chỉ, công nợ
+│   ├── products/    sản phẩm, phân loại, quy cách/giá, lịch sử giá
+│   ├── warehouse/   kho & đóng hàng
+│   ├── delivery/    chuyến xe, tạo chuyến, chi tiết chuyến
+│   ├── fleet/       quản lý xe
+│   └── more/        cài đặt, báo cáo, quản lý người dùng, nhật ký hệ thống
+├── shell/           main_shell (bottom nav theo vai trò)
+└── widgets/         common (StatusChip, SectionCard, KVRow, pickImage…)
+
+noti-server/         worker Node.js gửi push FCM theo vai trò
+```
+
+---
+
+## 9. Bảo mật
+
+- **KHÔNG commit** service account (`*firebase-adminsdk*.json`), `.env`, keystore — đã có trong `.gitignore`.
+- Nếu lỡ đẩy khóa admin lên git: **tạo khóa mới ngay** (Firebase Console → Service accounts → generate new private key), vì git giữ lịch sử.
+
+---
+
+## 10. MVP đã có
+
+Đăng nhập/phân quyền · sản phẩm/giá/lịch sử giá · khách/nhiều địa chỉ/công nợ · tạo đơn (snapshot giá + địa chỉ) · in hoá đơn · kho/đóng hàng · chuyến xe/tài xế · giao hàng/thu COD · thu công nợ (FIFO nhiều đơn) · hủy đơn (hoàn tiền, đối trừ) · timeline · notification theo vai trò + push · dashboard/báo cáo · audit log · quản lý người dùng · xóa toàn bộ dữ liệu.
+
+**Chưa làm:** in Bluetooth thật (mới preview hoá đơn), deep-link khi bấm push, iOS APNs.
