@@ -135,8 +135,17 @@ class Order {
   final String? cancelReason;
 
   // packing info
-  final int? packageCount; // số kiện
+  /// Mã kiện `KIyyMMdd-NNN`, sinh tự động khi đóng hàng xong.
+  final String? packageCode;
+
+  /// Số kiện — LEGACY: trước đây nhập tay, giờ thay bằng [packageCode].
+  /// Giữ lại để đơn đã đóng trước khi đổi vẫn hiển thị đúng.
+  final int? packageCount;
+
+  /// Khối lượng, LUÔN quy về **kg**. [weightUnit] chỉ để hiển thị lại đúng
+  /// đơn vị đã nhập (`kg` / `tạ` / `tấn`) — xem `fmtWeight()`.
   final double? weightKg;
+  final String weightUnit;
 
   final List<TimelineEvent> timeline;
 
@@ -166,8 +175,10 @@ class Order {
     this.note = '',
     this.deliveryNote = '',
     this.cancelReason,
+    this.packageCode,
     this.packageCount,
     this.weightKg,
+    this.weightUnit = 'kg',
     this.timeline = const [],
   });
 
@@ -222,8 +233,10 @@ class Order {
     note: m['note'] ?? '',
     deliveryNote: m['deliveryNote'] ?? '',
     cancelReason: m['cancelReason'],
+    packageCode: m['packageCode'],
     packageCount: m['packageCount'],
     weightKg: (m['weightKg'] as num?)?.toDouble(),
+    weightUnit: m['weightUnit'] ?? 'kg',
     timeline: ((m['timeline'] as List?) ?? [])
         .map((e) => TimelineEvent.fromMap(Map<String, dynamic>.from(e)))
         .toList(),
@@ -257,8 +270,10 @@ class Order {
     'note': note,
     'deliveryNote': deliveryNote,
     'cancelReason': cancelReason,
+    'packageCode': packageCode,
     'packageCount': packageCount,
     'weightKg': weightKg,
+    'weightUnit': weightUnit,
     'timeline': timeline.map((e) => e.toMap()).toList(),
   };
 }

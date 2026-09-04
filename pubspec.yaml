@@ -10,6 +10,10 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Tiếng Việt cho widget hệ thống (date/time picker, menu sao chép/dán...)
+  flutter_localizations:
+    sdk: flutter
+
   cupertino_icons: ^1.0.8
 
   # Firebase

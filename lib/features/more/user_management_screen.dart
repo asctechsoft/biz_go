@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
@@ -34,14 +34,18 @@ class UserManagementScreen extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
           final users = snap.data!;
-          return ListView.separated(
-            padding: const EdgeInsets.all(12),
-            itemCount: users.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, i) {
-              final u = users[i];
-              return Card(
-                child: ListTile(
+          final meId = context.read<AuthProvider>().user?.id;
+          return SlidableAutoCloseBehavior(
+            child: ListView.separated(
+              padding: const EdgeInsets.all(12),
+              itemCount: users.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, i) {
+                final u = users[i];
+                // Không cho xoá Chủ (chỉ có 1, xoá là mất quyền quản trị) và
+                // không cho tự xoá chính mình.
+                final canDelete = u.role != UserRole.owner && u.id != meId;
+                final tile = ListTile(
                   onTap: () => _editUser(context, u),
                   leading: Avatar(u.name, size: 42),
                   title: Text(u.name,
@@ -59,9 +63,42 @@ class UserManagementScreen extends StatelessWidget {
                           value: u.active,
                           onChanged: (v) => db.setUserActive(u.id, v),
                         ),
-                ),
-              );
-            },
+                );
+                if (!canDelete) return Card(child: tile);
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Slidable(
+                    key: ValueKey(u.id),
+                    groupTag: 'users',
+                    endActionPane: ActionPane(
+                      motion: const DrawerMotion(),
+                      extentRatio: 0.28, // hé lộ ~1/4, không dismiss hết
+                      children: [
+                        SlidableAction(
+                          onPressed: (ctx) => _deleteUser(ctx, db, u),
+                          backgroundColor: AppColors.danger,
+                          foregroundColor: Colors.white,
+                          icon: Icons.delete,
+                          label: 'Xóa',
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: AppColors.card,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: AppColors.border),
+                          borderRadius: const BorderRadius.horizontal(
+                            left: Radius.circular(12),
+                          ),
+                        ),
+                        child: tile,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
           );
         },
       ),
@@ -72,6 +109,35 @@ class UserManagementScreen extends StatelessWidget {
         label: const Text('Thêm', style: TextStyle(color: Colors.white)),
       ),
     );
+  }
+
+  /// Xoá tài khoản (swipe sang trái). Chỉ xoá hồ sơ Firestore — tài khoản
+  /// Firebase Auth cần Admin SDK mới xoá được, nên SĐT đó không tạo lại được.
+  Future<void> _deleteUser(BuildContext context, Db db, AppUser u) async {
+    final me = context.read<AuthProvider>().user;
+    final ok = await confirmDialog(
+      context,
+      title: 'Xóa tài khoản',
+      message: 'Xóa "${u.name}" (${u.phone})? Người này sẽ không đăng nhập '
+          'được nữa. Không thể hoàn tác, và SĐT này KHÔNG tạo lại được.',
+      confirm: 'Xóa',
+    );
+    if (!ok) return;
+    if (context.mounted) toast(context, 'Đã xóa tài khoản ${u.name}');
+    // Co hàng lại (đẩy các dòng dưới lên) rồi mới xóa dữ liệu.
+    final slidable = context.mounted ? Slidable.of(context) : null;
+    void remove() => db.deleteUser(
+          u.id,
+          actorId: me?.id ?? '',
+          actorName: me?.name ?? '',
+        );
+    if (slidable != null) {
+      slidable.dismiss(
+        ResizeRequest(const Duration(milliseconds: 300), remove),
+      );
+    } else {
+      remove();
+    }
   }
 
   /// Sửa hồ sơ user: tên (mọi vai trò) + vai trò (trừ Chủ). SĐT giữ nguyên.

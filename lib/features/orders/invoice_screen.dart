@@ -172,11 +172,18 @@ class InvoiceScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (o.packageCount != null)
+                if (o.packageCode != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: _line('Mã kiện:',
+                        '${o.packageCode}${o.weightKg != null ? ' · ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}'),
+                  )
+                // Đơn đóng trước khi đổi sang mã kiện tự động.
+                else if (o.packageCount != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: _line('Số kiện:',
-                        '${o.packageCount}${o.weightKg != null ? ' · ${o.weightKg}kg' : ''}'),
+                        '${o.packageCount}${o.weightKg != null ? ' · ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}'),
                   ),
                 if (o.deliveryNote.isNotEmpty) ...[
                   const SizedBox(height: 4),

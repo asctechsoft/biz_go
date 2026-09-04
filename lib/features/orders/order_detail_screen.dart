@@ -69,6 +69,12 @@ class OrderDetailScreen extends StatelessWidget {
                     KVRow('Địa chỉ giao', o.deliveryAddress),
                     if (o.deliveryNote.isNotEmpty)
                       KVRow('Ghi chú giao', o.deliveryNote),
+                    if (o.packageCode != null)
+                      KVRow('Mã kiện', o.packageCode!)
+                    else if (o.packageCount != null)
+                      KVRow('Số kiện', '${o.packageCount}'), // đơn đóng cũ
+                    if (o.weightKg != null)
+                      KVRow('Khối lượng', fmtWeight(o.weightKg, o.weightUnit)),
                     if (o.deliveryMapUrl.isNotEmpty ||
                         o.deliveryAddress.isNotEmpty) ...[
                       const SizedBox(height: 8),
@@ -387,52 +393,118 @@ class _ActionBar extends StatelessWidget {
 
   Future<void> _packDialog(BuildContext context, Db db, Order o, String uid,
       String uname) async {
-    final kiesC = TextEditingController();
-    final kgC = TextEditingController();
+    // Mã kiện cấp trước để hiện sẵn trong dialog. Lỗi mạng thì để null →
+    // markPacked tự cấp lúc lưu.
+    String? code;
+    try {
+      code = await db.nextPackageCode();
+    } catch (_) {
+      code = null;
+    }
+    if (!context.mounted) return;
+
+    final weightC = TextEditingController();
     final noteC = TextEditingController();
+    String unit = 'kg';
+    String? error;
+
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Đóng hàng xong'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: kiesC,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Số kiện')),
-            const SizedBox(height: 8),
-            TextField(
-                controller: kgC,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Khối lượng (kg)')),
-            const SizedBox(height: 8),
-            TextField(
-                controller: noteC,
-                decoration: const InputDecoration(labelText: 'Ghi chú')),
-          ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Đóng hàng xong'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Mã kiện tự sinh — chỉ đọc, không cho sửa.
+                TextField(
+                  enabled: false,
+                  controller: TextEditingController(
+                      text: code ?? 'Sẽ tạo khi lưu'),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary),
+                  decoration:
+                      const InputDecoration(labelText: 'Mã kiện (tự động)'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: weightC,
+                  autofocus: true,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) {
+                    if (error != null) setDlg(() => error = null);
+                  },
+                  decoration: const InputDecoration(labelText: 'Khối lượng'),
+                ),
+                const SizedBox(height: 10),
+                const Text('Đơn vị',
+                    style: TextStyle(
+                        fontSize: 13, color: AppColors.textSecondary)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final u in weightUnits.keys)
+                      ChoiceChip(
+                        label: Text(u),
+                        selected: unit == u,
+                        onSelected: (_) => setDlg(() => unit = u),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                    controller: noteC,
+                    decoration: const InputDecoration(labelText: 'Ghi chú')),
+                if (error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(error!,
+                      style: const TextStyle(
+                          color: AppColors.danger, fontWeight: FontWeight.w600)),
+                ],
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Hủy')),
+            ElevatedButton(
+                style: ElevatedButton.styleFrom(minimumSize: const Size(80, 40)),
+                onPressed: () {
+                  if (_parseWeight(weightC.text) == null) {
+                    setDlg(() => error = 'Nhập khối lượng lớn hơn 0');
+                    return;
+                  }
+                  Navigator.pop(ctx, true);
+                },
+                child: const Text('Xác nhận')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Hủy')),
-          ElevatedButton(
-              style: ElevatedButton.styleFrom(minimumSize: const Size(80, 40)),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Xác nhận')),
-        ],
       ),
     );
     if (ok == true) {
+      // Quy về kg trước khi lưu (Firestore luôn giữ kg).
+      final value = _parseWeight(weightC.text)!;
       await db.markPacked(o, uid, uname,
-          packageCount: int.tryParse(kiesC.text),
-          weightKg: double.tryParse(kgC.text),
+          code: code,
+          weightKg: value * weightUnits[unit]!.toDouble(),
+          weightUnit: unit,
           note: noteC.text.trim());
       if (context.mounted) toast(context, 'Đã đóng hàng, chờ xếp chuyến');
     }
+  }
+
+  /// Khối lượng người dùng nhập — nhận cả dấu phẩy kiểu VN ("1,5"), trả về
+  /// null nếu không hợp lệ hoặc <= 0.
+  static double? _parseWeight(String s) {
+    final v = double.tryParse(s.trim().replaceAll(',', '.'));
+    return (v == null || v <= 0) ? null : v;
   }
 
   Future<void> _deliverFlow(BuildContext context, Db db, Order o, String uid,

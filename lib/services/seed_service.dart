@@ -29,6 +29,8 @@ class SeedService {
         password: DemoAccounts.password,
         name: a.$2,
         role: a.$3,
+        // Tài khoản bootstrap → buộc đổi SĐT/mật khẩu ở lần đăng nhập đầu.
+        mustChangeCredentials: true,
       );
     }
   }

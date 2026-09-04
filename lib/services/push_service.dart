@@ -41,4 +41,15 @@ class PushService {
       debugPrint('PushService.unregister error: $e');
     }
   }
+
+  /// Chỉ bỏ token trên máy, KHÔNG ghi Firestore. Dùng khi vừa xoá sạch
+  /// collection `users` — nếu gọi [unregister] thì `set(merge)` sẽ tạo lại
+  /// doc user rác vừa xoá.
+  Future<void> dropToken() async {
+    try {
+      await _fm.deleteToken();
+    } catch (e) {
+      debugPrint('PushService.dropToken error: $e');
+    }
+  }
 }

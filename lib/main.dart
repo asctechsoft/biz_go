@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
@@ -57,11 +58,27 @@ class _BizGoAppState extends State<BizGoApp> {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
         routerConfig: _router,
-        // Chạm ra ngoài ô nhập → bỏ focus, ẩn bàn phím (toàn app).
-        builder: (context, child) => GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-          child: child,
+        // Khoá tiếng Việt cho mọi widget hệ thống (date/time picker, nút
+        // Cancel/OK, menu sao chép-dán...). Thiếu phần này Flutter rơi về
+        // tiếng Anh bất kể ngôn ngữ máy.
+        locale: const Locale('vi'),
+        supportedLocales: const [Locale('vi')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        builder: (context, child) => MediaQuery(
+          // Ép giờ 24h cho time picker: app hiển thị giờ bằng
+          // `fmtTime` (DateFormat 'HH:mm') ở mọi nơi, để picker chạy 12h
+          // SÁNG/CHIỀU theo cài đặt máy là lệch với chính nó.
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          // Chạm ra ngoài ô nhập → bỏ focus, ẩn bàn phím (toàn app).
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+            child: child,
+          ),
         ),
       ),
     );

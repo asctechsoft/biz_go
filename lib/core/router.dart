@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import '../features/auth/login_screen.dart';
+import '../features/auth/setup_account_screen.dart';
 import '../features/customers/customer_detail_screen.dart';
 import '../features/customers/customer_edit_screen.dart';
 import '../features/customers/customers_screen.dart';
@@ -44,6 +45,13 @@ GoRouter buildRouter(AuthProvider auth) {
       final role = auth.user?.role;
 
       if (!loggedIn) return (loggingIn) ? null : '/login';
+
+      // Lần đầu đăng nhập (tài khoản bootstrap) → khoá ở màn thiết lập tài
+      // khoản, không cho vào route nào khác cho tới khi đổi SĐT + mật khẩu.
+      final atSetup = state.matchedLocation == '/setup-account';
+      if (auth.mustSetupAccount) return atSetup ? null : '/setup-account';
+      if (atSetup) return role == null ? '/dashboard' : Perm.home(role);
+
       // Đã đăng nhập mà đang ở splash/login → về màn chính theo vai trò.
       if (atSplash || loggingIn) {
         return role == null ? '/dashboard' : Perm.home(role);
@@ -57,41 +65,62 @@ GoRouter buildRouter(AuthProvider auth) {
     routes: [
       GoRoute(path: '/splash', builder: (c, s) => const SplashScreen()),
       GoRoute(path: '/login', builder: (c, s) => const LoginScreen()),
+      GoRoute(
+        path: '/setup-account',
+        builder: (c, s) => const SetupAccountScreen(),
+      ),
       // Bottom-nav shell
       ShellRoute(
         builder: (c, s, child) => MainShell(child: child),
         routes: [
-          GoRoute(path: '/dashboard', builder: (c, s) => const DashboardScreen()),
+          GoRoute(
+            path: '/dashboard',
+            builder: (c, s) => const DashboardScreen(),
+          ),
           GoRoute(path: '/orders', builder: (c, s) => const OrdersScreen()),
-          GoRoute(path: '/delivery', builder: (c, s) => const DeliveryHubScreen()),
+          GoRoute(
+            path: '/delivery',
+            builder: (c, s) => const DeliveryHubScreen(),
+          ),
           GoRoute(path: '/more', builder: (c, s) => const MoreScreen()),
         ],
       ),
       // Full-screen pushed routes
       GoRoute(path: '/customers', builder: (c, s) => const CustomersScreen()),
-      GoRoute(path: '/notifications', builder: (c, s) => const NotificationsScreen()),
+      GoRoute(
+        path: '/notifications',
+        builder: (c, s) => const NotificationsScreen(),
+      ),
       GoRoute(path: '/filter', builder: (c, s) => const QuickFilterScreen()),
       GoRoute(
-          path: '/orders/create', builder: (c, s) => const CreateOrderScreen()),
+        path: '/orders/create',
+        builder: (c, s) => const CreateOrderScreen(),
+      ),
       GoRoute(
-          path: '/orders/:id',
-          builder: (c, s) => OrderDetailScreen(orderId: s.pathParameters['id']!)),
+        path: '/orders/:id',
+        builder: (c, s) => OrderDetailScreen(orderId: s.pathParameters['id']!),
+      ),
       GoRoute(
-          path: '/customers/new', builder: (c, s) => const CustomerEditScreen()),
+        path: '/customers/new',
+        builder: (c, s) => const CustomerEditScreen(),
+      ),
       GoRoute(
-          path: '/customers/:id',
-          builder: (c, s) =>
-              CustomerDetailScreen(customerId: s.pathParameters['id']!)),
+        path: '/customers/:id',
+        builder: (c, s) =>
+            CustomerDetailScreen(customerId: s.pathParameters['id']!),
+      ),
       GoRoute(path: '/products', builder: (c, s) => const ProductsScreen()),
       GoRoute(
-          path: '/products/:id',
-          builder: (c, s) =>
-              ProductDetailScreen(productId: s.pathParameters['id']!)),
+        path: '/products/:id',
+        builder: (c, s) =>
+            ProductDetailScreen(productId: s.pathParameters['id']!),
+      ),
       GoRoute(path: '/warehouse', builder: (c, s) => const WarehouseScreen()),
       GoRoute(path: '/trips/new', builder: (c, s) => const TripCreateScreen()),
       GoRoute(
-          path: '/trips/:id',
-          builder: (c, s) => TripDetailScreen(tripId: s.pathParameters['id']!)),
+        path: '/trips/:id',
+        builder: (c, s) => TripDetailScreen(tripId: s.pathParameters['id']!),
+      ),
       GoRoute(path: '/reports', builder: (c, s) => const ReportsScreen()),
       GoRoute(path: '/fleet', builder: (c, s) => const FleetScreen()),
       GoRoute(path: '/users', builder: (c, s) => const UserManagementScreen()),

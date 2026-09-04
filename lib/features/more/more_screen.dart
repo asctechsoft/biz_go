@@ -6,6 +6,7 @@ import '../../core/enums.dart';
 import '../../core/permissions.dart';
 import '../../core/theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/biometric_service.dart';
 import '../../services/db.dart';
 import '../../widgets/common.dart';
 
@@ -159,7 +160,8 @@ class MoreScreen extends StatelessWidget {
                 'Xóa toàn bộ dữ liệu',
                 style: TextStyle(color: AppColors.danger),
               ),
-              subtitle: const Text('Đơn, khách, sản phẩm, chuyến, công nợ...'),
+              subtitle: const Text(
+                  'Đơn, khách, sản phẩm, chuyến, công nợ, người dùng...'),
               onTap: () => _clearData(context),
             ),
           ListTile(
@@ -261,13 +263,15 @@ class MoreScreen extends StatelessWidget {
 
   Future<void> _clearData(BuildContext context) async {
     final db = context.read<Db>();
+    final auth = context.read<AuthProvider>();
     final messenger = ScaffoldMessenger.of(context);
     final ok = await confirmDialog(
       context,
       title: 'Xóa toàn bộ dữ liệu',
       message:
-          'Xóa TẤT CẢ đơn hàng, khách, sản phẩm, chuyến, công nợ, nhật ký? '
-          'KHÔNG THỂ hoàn tác. Tài khoản đăng nhập được giữ lại.',
+          'Xóa TẤT CẢ đơn hàng, khách, sản phẩm, chuyến, công nợ, nhật ký VÀ '
+          'hồ sơ người dùng? KHÔNG THỂ hoàn tác. App sẽ đăng xuất, đăng nhập '
+          'lại bằng tài khoản mặc định 0900000000 / 123456 rồi thiết lập lại.',
       confirm: 'Xóa hết',
     );
     if (!ok) return;
@@ -281,11 +285,17 @@ class MoreScreen extends StatelessWidget {
     );
     try {
       await db.clearAllData();
+      // Hồ sơ user vừa bị xoá → phiên hiện tại không còn hợp lệ. Đăng xuất và
+      // bỏ thông tin vân tay đã lưu; purgeToken: false để PushService không
+      // ghi lại doc users vừa xoá.
+      await BiometricService().clear();
+      await auth.signOut(purgeToken: false);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         const SnackBar(
           content: Text(
-            'Đã xóa toàn bộ dữ liệu. Vào lại màn đăng nhập để tạo dữ liệu mẫu.',
+            'Đã xóa toàn bộ dữ liệu. Đăng nhập lại bằng 0900000000 / 123456 '
+            'rồi thiết lập tài khoản.',
           ),
         ),
       );

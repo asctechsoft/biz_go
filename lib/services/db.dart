@@ -55,6 +55,31 @@ class Db {
   Future<void> setUserActive(String uid, bool active) =>
       _users.doc(uid).update({'active': active});
 
+  /// Xoá hồ sơ người dùng (bấm nhầm khi tạo tài khoản thì xoá được).
+  ///
+  /// CHỈ xoá doc Firestore — tài khoản **Firebase Auth không xoá được từ
+  /// client** (cần Admin SDK ở `noti-server` hoặc xoá tay trong Console). Hệ
+  /// quả: (1) người bị xoá không đăng nhập được nữa vì `AuthService.signIn`
+  /// từ chối account không có hồ sơ; (2) SĐT đó vẫn bị chiếm, tạo lại cùng số
+  /// sẽ báo `email-already-in-use`.
+  Future<void> deleteUser(
+    String uid, {
+    String actorId = '',
+    String actorName = '',
+  }) async {
+    final snap = await _users.doc(uid).get();
+    await _users.doc(uid).delete();
+    await _audit(
+      action: 'DELETE_USER',
+      entityType: 'user',
+      entityId: uid,
+      actorId: actorId,
+      actorName: actorName,
+      before: snap.data(),
+      note: 'Xoá hồ sơ người dùng (tài khoản Firebase Auth vẫn còn)',
+    );
+  }
+
   /// Cập nhật hồ sơ user (tên / vai trò). Không đổi SĐT vì gắn với đăng nhập.
   Future<void> updateUser(String uid, {String? name, UserRole? role}) {
     final data = <String, dynamic>{};
@@ -336,12 +361,27 @@ class Db {
       _warehouseStep(o, WarehouseStatus.PACKING, OrderStatus.PROCESSING,
           'Bắt đầu đóng hàng', actorId, actorName);
 
+  /// Cấp mã kiện kế tiếp `KIyyMMdd-NNN`. Gọi lúc mở dialog "Đóng hàng xong"
+  /// để hiện mã sẵn; huỷ dialog thì số đó bị bỏ (giống mã đơn/mã chuyến, có
+  /// thể khuyết số — chấp nhận được, đổi lấy việc mã hiện ngay).
+  Future<String> nextPackageCode([DateTime? day]) async {
+    final now = day ?? DateTime.now();
+    return packageCode(now, await _nextSeq('package', now));
+  }
+
+  /// [weightKg] phải đã quy về kg; [weightUnit] chỉ để hiển thị lại.
+  /// [code] là mã kiện đã cấp sẵn ở dialog — null thì tự cấp ở đây.
   Future<void> markPacked(Order o, String actorId, String actorName,
-      {int? packageCount, double? weightKg, String note = ''}) async {
+      {String? code,
+      double? weightKg,
+      String weightUnit = 'kg',
+      String note = ''}) async {
+    final pkgCode = code ?? await nextPackageCode();
     await _orders.doc(o.id).update({
       'warehouseStatus': WarehouseStatus.PACKED.name,
-      'packageCount': packageCount,
+      'packageCode': pkgCode,
       'weightKg': weightKg,
+      'weightUnit': weightUnit,
     });
     await _appendTimeline(
         o.id,
@@ -360,12 +400,13 @@ class Db {
         before: {'warehouseStatus': o.warehouseStatus.name},
         after: {
           'warehouseStatus': WarehouseStatus.PACKED.name,
-          'packageCount': packageCount,
+          'packageCode': pkgCode,
           'weightKg': weightKg,
+          'weightUnit': weightUnit,
         });
     await _notify(
         title: 'Đơn ${o.code} chờ xếp chuyến',
-        body: 'Đã đóng hàng ${packageCount ?? ''} kiện',
+        body: 'Đã đóng hàng · $pkgCode · ${fmtWeight(weightKg, weightUnit)}',
         refType: NotifRefType.order,
         refId: o.id,
         roles: {UserRole.owner},
@@ -630,6 +671,46 @@ class Db {
       .map((s) => s.docs.map((d) => Trip.fromMap(d.id, d.data())).toList()
         ..sort((a, b) => b.runDate.compareTo(a.runDate)));
 
+  /// Chuyến còn "giữ" xe + tài xế: chưa giao xong và chưa hủy. Chuyến
+  /// COMPLETED/CANCELLED thì xe và tài xế rảnh lại (chạy chuyến 2 trong ngày).
+  static bool tripHoldsResources(Trip t) =>
+      t.status != TripStatus.COMPLETED && t.status != TripStatus.CANCELLED;
+
+  /// Khoảng [từ, đến) theo millisecondsSinceEpoch của trọn ngày [day].
+  /// `runDate` lưu kèm cả giờ nên phải quét cả ngày, không so bằng `==`.
+  static (int, int) _dayRange(DateTime day) {
+    final from = DateTime(day.year, day.month, day.day);
+    return (
+      from.millisecondsSinceEpoch,
+      from.add(const Duration(days: 1)).millisecondsSinceEpoch,
+    );
+  }
+
+  /// Chuyến trong 1 ngày (mọi trạng thái) — để biết xe/tài xế nào đang rảnh.
+  /// Chỉ range trên MỘT field `runDate` → không cần composite index.
+  Stream<List<Trip>> tripsOnDate(DateTime day) {
+    final (from, to) = _dayRange(day);
+    return _trips
+        .where('runDate', isGreaterThanOrEqualTo: from)
+        .where('runDate', isLessThan: to)
+        .snapshots()
+        .map((s) => s.docs.map((d) => Trip.fromMap(d.id, d.data())).toList()
+          ..sort((a, b) => a.runDate.compareTo(b.runDate)));
+  }
+
+  /// Chuyến chưa xong trong ngày [day] — bản one-shot cho lúc lưu.
+  Future<List<Trip>> _openTripsOnDate(DateTime day) async {
+    final (from, to) = _dayRange(day);
+    final snap = await _trips
+        .where('runDate', isGreaterThanOrEqualTo: from)
+        .where('runDate', isLessThan: to)
+        .get();
+    return snap.docs
+        .map((d) => Trip.fromMap(d.id, d.data()))
+        .where(tripHoldsResources)
+        .toList();
+  }
+
   Future<Trip> createTrip({
     required DateTime runDate,
     required Vehicle vehicle,
@@ -637,6 +718,19 @@ class Db {
     DateTime? plannedDeparture,
     String note = '',
   }) async {
+    // Xe / tài xế đang có chuyến chưa xong trong ngày thì không nhận chuyến
+    // mới. Chặn ở tầng Db (không chỉ ở UI) để 2 người điều phối bấm cùng lúc
+    // hoặc stream trễ vẫn không tạo được chuyến trùng.
+    for (final t in await _openTripsOnDate(runDate)) {
+      if (t.vehicleId == vehicle.id) {
+        throw Exception(
+            'Xe ${vehicle.plate} đang chạy chuyến ${t.code} (chưa xong).');
+      }
+      if (t.driverId == driver.id) {
+        throw Exception(
+            'Tài xế ${driver.name} đang chạy chuyến ${t.code} (chưa xong).');
+      }
+    }
     final seq = await _nextSeq('trip', runDate);
     final ref = _trips.doc();
     final trip = Trip(
@@ -992,7 +1086,12 @@ class Db {
     await batch.commit();
   }
 
-  // ---------- Xóa toàn bộ dữ liệu nghiệp vụ (giữ tài khoản đăng nhập) ----------
+  // ---------- Xóa toàn bộ dữ liệu (kể cả hồ sơ người dùng) ----------
+  //
+  // `users` được xoá CUỐI CÙNG để các bước trên vẫn còn quyền ghi. Lưu ý:
+  // chỉ xoá doc Firestore — tài khoản Firebase Auth phải xoá bằng Admin SDK
+  // (noti-server) hoặc tay trong Console. Sau khi xoá, app tự đăng xuất và
+  // số bootstrap 0900000000/123456 lại tạo được Chủ mới (→ màn thiết lập).
   static const _clearableCollections = [
     'categories',
     'products',
@@ -1007,6 +1106,7 @@ class Db {
     'audit_logs',
     'counters',
     'meta', // gồm cờ seeded → cho phép seed lại
+    'users', // PHẢI đứng cuối — xoá trước là mất hồ sơ đang dùng để ghi
   ];
 
   Future<void> clearAllData() async {
