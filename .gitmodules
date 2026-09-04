@@ -1,0 +1,3 @@
+[submodule "noti-server"]
+	path = noti-server
+	url = https://github.com/asctechsoft/server-noti-bizgo.git
