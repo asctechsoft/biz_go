@@ -20,8 +20,8 @@ class SeedService {
     return doc.exists && (doc.data()?['done'] == true);
   }
 
-  /// Tạo cả 3 tài khoản demo (Chủ / Kiểm hàng / Giao hàng), đồng thời sửa lại
-  /// đúng role cho tài khoản seed cũ. Idempotent.
+  /// Tạo tài khoản Chủ ban đầu (theo DemoAccounts.list). Các vai trò khác do
+  /// Chủ tự tạo qua "Quản lý người dùng". Idempotent.
   Future<void> ensureDemoUser() async {
     for (final a in DemoAccounts.list) {
       await _auth.ensureAccount(

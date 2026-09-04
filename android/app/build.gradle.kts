@@ -25,7 +25,8 @@ android {
         applicationId = "com.asc.bizgo"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // local_auth + flutter_secure_storage yêu cầu tối thiểu API 23.
+        minSdk = maxOf(flutter.minSdkVersion, 23)
         targetSdk = flutter.targetSdkVersion
         multiDexEnabled = true
         versionCode = flutter.versionCode

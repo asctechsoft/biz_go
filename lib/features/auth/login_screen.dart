@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/biometric_service.dart';
 import '../../services/seed_service.dart';
 import '../../widgets/common.dart';
 
@@ -16,8 +17,21 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _phone = TextEditingController(text: SeedService.demoPhone);
   final _pass = TextEditingController(text: SeedService.demoPassword);
+  final _bio = BiometricService();
   bool _obscure = true;
   bool _busy = false;
+  bool _bioReady = false; // máy hỗ trợ vân tay + đã lưu tài khoản
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometric();
+  }
+
+  Future<void> _checkBiometric() async {
+    final ok = await _bio.canUse() && await _bio.hasSaved();
+    if (mounted) setState(() => _bioReady = ok);
+  }
 
   @override
   void dispose() {
@@ -28,22 +42,30 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     final auth = context.read<AuthProvider>();
-    final ok = await auth.signIn(_phone.text.trim(), _pass.text);
-    if (!ok && mounted) toast(context, auth.error ?? 'Đăng nhập thất bại');
+    final phone = _phone.text.trim();
+    final pass = _pass.text;
+    final ok = await auth.signIn(phone, pass);
+    if (ok) {
+      // Lưu để đăng nhập vân tay lần sau (đúng tài khoản này).
+      await _bio.save(phone, pass);
+    } else if (mounted) {
+      toast(context, auth.error ?? 'Đăng nhập thất bại');
+    }
   }
 
-  Future<void> _seedAndLogin() async {
-    setState(() => _busy = true);
-    try {
-      final seed = SeedService();
-      await seed.ensureDemoUser();
-      await seed.seedAll();
-      if (!mounted) return;
-      await _login();
-    } catch (e) {
-      if (mounted) toast(context, 'Lỗi tạo dữ liệu: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
+  Future<void> _bioLogin() async {
+    final creds = await _bio.credentials();
+    if (creds == null) {
+      if (mounted) toast(context, 'Chưa có tài khoản lưu. Đăng nhập mật khẩu trước.');
+      return;
+    }
+    final okBio = await _bio.authenticate();
+    if (!okBio) return;
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    final ok = await auth.signIn(creds.$1, creds.$2);
+    if (!ok && mounted) {
+      toast(context, auth.error ?? 'Đăng nhập thất bại');
     }
   }
 
@@ -112,19 +134,14 @@ class _LoginScreenState extends State<LoginScreen> {
                               strokeWidth: 2, color: Colors.white))
                       : const Text('Đăng nhập'),
                 ),
-                const SizedBox(height: 12),
-                TextButton.icon(
-                  onPressed: () =>
-                      toast(context, 'Đăng nhập vân tay sẽ hỗ trợ ở bản sau'),
-                  icon: const Icon(Icons.fingerprint),
-                  label: const Text('Đăng nhập bằng vân tay'),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: loading ? null : _seedAndLogin,
-                  icon: const Icon(Icons.auto_awesome),
-                  label: const Text('Tạo dữ liệu mẫu & đăng nhập demo'),
-                ),
+                if (_bioReady) ...[
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: loading ? null : _bioLogin,
+                    icon: const Icon(Icons.fingerprint),
+                    label: const Text('Đăng nhập bằng vân tay'),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 const Text('Phiên bản 1.0.0',
                     style: TextStyle(color: AppColors.textSecondary)),

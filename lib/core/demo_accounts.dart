@@ -4,10 +4,10 @@ import 'enums.dart';
 class DemoAccounts {
   static const password = '123456';
 
+  // Chỉ có tài khoản Chủ ban đầu. Các vai trò khác do Chủ tạo qua
+  // "Quản lý người dùng" sau khi đăng nhập.
   static const list = <(String phone, String name, UserRole role)>[
-    ('0900000000', 'Chủ Demo', UserRole.owner),
-    ('0900000001', 'Kiểm Hàng Demo', UserRole.checker),
-    ('0900000002', 'Giao Hàng Demo', UserRole.shipper),
+    ('0900000000', 'Admin', UserRole.owner),
   ];
 
   /// Tìm tài khoản demo theo số điện thoại (bỏ ký tự không phải số).

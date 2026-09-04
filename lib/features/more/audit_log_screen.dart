@@ -11,6 +11,19 @@ import '../../widgets/common.dart';
 class AuditLogScreen extends StatelessWidget {
   const AuditLogScreen({super.key});
 
+  static String _entityLabel(String t) => switch (t) {
+        'order' => 'Đơn hàng',
+        'payment' => 'Thanh toán',
+        'trip' => 'Chuyến xe',
+        'customer' => 'Khách hàng',
+        'product' => 'Sản phẩm',
+        'packaging' => 'Quy cách',
+        'category' => 'Danh mục',
+        'vehicle' => 'Xe',
+        'user' => 'Người dùng',
+        _ => t,
+      };
+
   @override
   Widget build(BuildContext context) {
     final db = context.read<Db>();
@@ -44,7 +57,7 @@ class AuditLogScreen extends StatelessWidget {
                               fontSize: 12, color: AppColors.textSecondary)),
                     ],
                   ),
-                  trailing: Text(a.entityType,
+                  trailing: Text(_entityLabel(a.entityType),
                       style: const TextStyle(
                           fontSize: 11, color: AppColors.textSecondary)),
                 ),

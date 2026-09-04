@@ -43,6 +43,10 @@ dependencies:
   excel: ^4.0.6
   share_plus: ^10.1.4
 
+  # Đăng nhập sinh trắc học (vân tay) + lưu thông tin đăng nhập an toàn
+  local_auth: ^2.3.0
+  flutter_secure_storage: ^9.2.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
