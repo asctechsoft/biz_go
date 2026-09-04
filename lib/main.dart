@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
@@ -13,6 +14,15 @@ import 'services/image_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Thanh điều hướng dưới của hệ thống: cùng tông trắng với bottom nav của app,
+  // icon màu tối cho dễ nhìn.
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      systemNavigationBarColor: Colors.white,
+      systemNavigationBarIconBrightness: Brightness.dark,
+      systemNavigationBarDividerColor: Colors.white,
+    ),
+  );
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await initializeDateFormatting('vi_VN');
   runApp(const BizGoApp());
@@ -47,6 +57,12 @@ class _BizGoAppState extends State<BizGoApp> {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
         routerConfig: _router,
+        // Chạm ra ngoài ô nhập → bỏ focus, ẩn bàn phím (toàn app).
+        builder: (context, child) => GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+          child: child,
+        ),
       ),
     );
   }

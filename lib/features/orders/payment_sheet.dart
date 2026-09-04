@@ -16,7 +16,7 @@ class PaymentResult {
 /// Mockup 6.5 — Thanh toán / thu tiền.
 Future<PaymentResult?> showPaymentSheet(BuildContext context, Order order) {
   final remaining = order.remaining > 0 ? order.remaining : 0;
-  final amountC = TextEditingController(text: '$remaining');
+  final amountC = TextEditingController(text: moneyPlain(remaining));
   final noteC = TextEditingController();
   PaymentMethod method = PaymentMethod.cash;
 
@@ -31,7 +31,9 @@ Future<PaymentResult?> showPaymentSheet(BuildContext context, Order order) {
         final afterRemaining = order.total - order.paidAmount - collected;
         return Padding(
           padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom +
+                  MediaQuery.of(ctx).padding.bottom +
+                  16,
               left: 16,
               right: 16,
               top: 16),
@@ -56,6 +58,7 @@ Future<PaymentResult?> showPaymentSheet(BuildContext context, Order order) {
                 TextField(
                   controller: amountC,
                   keyboardType: TextInputType.number,
+                  inputFormatters: [ThousandsInputFormatter()],
                   decoration: const InputDecoration(
                       labelText: 'Tiền thực thu', suffixText: 'đ'),
                   onChanged: (_) => setSheet(() {}),

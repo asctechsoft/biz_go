@@ -61,15 +61,21 @@ class DashboardScreen extends StatelessWidget {
             (s, o) => s + (o.remaining > 0 ? o.remaining : 0),
           );
 
-          return ListView(
-            padding: EdgeInsets.zero,
+          return Column(
             children: [
+              // ---- Phần trên cố định (không scroll) ----
               _Header(name: user?.name ?? '', now: now, db: db),
-              Transform.translate(
-                offset: const Offset(0, -30),
-                child: Column(
-                  children: [
-                    _StatRow(
+              // Card đè lên đáy header (-30) nhưng layout chỉ chiếm 98px
+              // (128 - 30) để không tạo khoảng trống bên dưới.
+              SizedBox(
+                height: 98,
+                child: OverflowBox(
+                  minHeight: 0,
+                  maxHeight: 128,
+                  alignment: Alignment.topCenter,
+                  child: Transform.translate(
+                    offset: const Offset(0, -30),
+                    child: _StatRow(
                       todayCount: today.length,
                       yestCount: yesterday.length,
                       revenueToday: revenueToday,
@@ -77,7 +83,15 @@ class DashboardScreen extends StatelessWidget {
                       delivering: delivering,
                       debt: debt,
                     ),
-                    const SizedBox(height: 8),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              // ---- Phần dưới scroll ----
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Container(
@@ -278,7 +292,7 @@ class _StatRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 112,
+      height: 128,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -658,11 +672,29 @@ class _RevenueSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 130,
+          height: 156,
           child: LineChart(
             LineChartData(
               minY: 0,
               maxY: maxV * 1.25,
+              lineTouchData: LineTouchData(
+                touchTooltipData: LineTouchTooltipData(
+                  fitInsideHorizontally: true,
+                  fitInsideVertically: true,
+                  getTooltipColor: (_) => AppColors.textPrimary,
+                  getTooltipItems: (spots) => [
+                    for (final s in spots)
+                      LineTooltipItem(
+                        money(s.y.toInt()),
+                        const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
               gridData: FlGridData(
                 show: true,
                 drawVerticalLine: false,
@@ -681,14 +713,14 @@ class _RevenueSection extends StatelessWidget {
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    reservedSize: 28,
+                    reservedSize: 38,
                     interval: maxV / 2 <= 0 ? 1 : maxV / 2,
                     getTitlesWidget: (v, _) => Text(
                       v >= 1000000
                           ? '${(v / 1000000).toStringAsFixed(0)}M'
                           : '${(v / 1000).toStringAsFixed(0)}k',
                       style: const TextStyle(
-                        fontSize: 8,
+                        fontSize: 11,
                         color: AppColors.textSecondary,
                       ),
                     ),
@@ -697,17 +729,17 @@ class _RevenueSection extends StatelessWidget {
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    reservedSize: 18,
+                    reservedSize: 30,
                     interval: 1,
                     getTitlesWidget: (v, _) {
                       final i = v.toInt();
                       if (i < 0 || i > 6) return const SizedBox.shrink();
                       return Padding(
-                        padding: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.only(top: 10),
                         child: Text(
                           DateFormat('d/M').format(days[i]),
                           style: const TextStyle(
-                            fontSize: 8,
+                            fontSize: 11,
                             color: AppColors.textSecondary,
                           ),
                         ),
@@ -815,12 +847,30 @@ class _TodoCard extends StatelessWidget {
               physics: const BouncingScrollPhysics(),
               padding: EdgeInsets.zero,
               children: [
-                _todo(context, Icons.inventory_2, AppColors.warning,
-                    'Đơn chờ\nđóng gói', packing, '/warehouse'),
-                _todo(context, Icons.local_shipping, AppColors.info,
-                    'Đơn chờ\nxếp xe', loading, '/delivery'),
-                _todo(context, Icons.account_balance_wallet, AppColors.success,
-                    'Công nợ\ncần thu', debtCount, '/customers'),
+                _todo(
+                  context,
+                  Icons.inventory_2,
+                  AppColors.warning,
+                  'Đơn chờ đóng gói',
+                  packing,
+                  '/warehouse',
+                ),
+                _todo(
+                  context,
+                  Icons.local_shipping,
+                  AppColors.info,
+                  'Đơn chờ xếp xe',
+                  loading,
+                  '/delivery',
+                ),
+                _todo(
+                  context,
+                  Icons.account_balance_wallet,
+                  AppColors.success,
+                  'Công nợ cần thu',
+                  debtCount,
+                  '/customers',
+                ),
               ],
             ),
           ),
@@ -889,7 +939,10 @@ class _TodoCard extends StatelessWidget {
                 ),
                 Container(
                   padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
                   child: const Icon(
                     Icons.arrow_forward,
                     color: Colors.white,

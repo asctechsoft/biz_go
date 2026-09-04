@@ -106,6 +106,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       deliveryAddress: _address!.address,
       deliveryReceiver: _address!.receiver,
       deliveryPhone: _address!.phone,
+      deliveryMapUrl: _address!.mapUrl,
       items: _cart.values.toList(),
       shippingFee: _int(_shipping),
       discount: _int(_discount),
@@ -496,7 +497,27 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     KVRow('Khách hàng', _customer!.name),
                     KVRow('SĐT', _customer!.phone),
                     KVRow('Địa chỉ giao', _address!.address),
-                    KVRow('Sản phẩm', 'Xem chi tiết (${_cart.length})'),
+                    InkWell(
+                      onTap: _showCartDetail,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text('Sản phẩm',
+                                  style: TextStyle(
+                                      color: AppColors.textSecondary)),
+                            ),
+                            Text('Xem chi tiết (${_cart.length})',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary)),
+                            const Icon(Icons.chevron_right,
+                                size: 18, color: AppColors.primary),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -505,21 +526,23 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               _numField('Giảm giá', _discount),
               _numField('Khách trả trước', _prepaid),
               const SizedBox(height: 4),
-              DropdownButtonFormField<PaymentStatus>(
-                initialValue: _payStatus,
-                decoration:
-                    const InputDecoration(labelText: 'Trạng thái thanh toán'),
-                items: [
-                  for (final s in [
-                    PaymentStatus.UNPAID,
-                    PaymentStatus.PARTIAL,
-                    PaymentStatus.PAID,
-                    PaymentStatus.COD,
-                    PaymentStatus.DEBT,
-                  ])
-                    DropdownMenuItem(value: s, child: Text(paymentStatusUi(s).label)),
-                ],
-                onChanged: (v) => setState(() => _payStatus = v!),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: _pickPayStatus,
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                      labelText: 'Trạng thái thanh toán'),
+                  child: Row(
+                    children: [
+                      Expanded(
+                          child: Text(paymentStatusUi(_payStatus).label,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600))),
+                      const Icon(Icons.arrow_drop_down,
+                          color: AppColors.textSecondary),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -577,11 +600,99 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     );
   }
 
+  /// Bottom sheet chọn trạng thái thanh toán.
+  Future<void> _pickPayStatus() async {
+    const options = [
+      PaymentStatus.UNPAID,
+      PaymentStatus.PARTIAL,
+      PaymentStatus.PAID,
+      PaymentStatus.COD,
+      PaymentStatus.DEBT,
+    ];
+    final picked = await showModalBottomSheet<PaymentStatus>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text('Trạng thái thanh toán',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+            for (final s in options)
+              ListTile(
+                title: Text(paymentStatusUi(s).label,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                trailing: _payStatus == s
+                    ? const Icon(Icons.check, color: AppColors.primary)
+                    : null,
+                onTap: () => Navigator.pop(ctx, s),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked != null) setState(() => _payStatus = picked);
+  }
+
+  /// Sheet xem nhanh sản phẩm trong đơn (chỉ đọc).
+  void _showCartDetail() {
+    final items = _cart.values.toList();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).padding.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text('Sản phẩm (${items.length})',
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final it in items)
+                      ListTile(
+                        leading: LocalImage(path: it.imagePath, size: 44),
+                        title: Text(it.displayName,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text('${money(it.unitPrice)} × ${it.quantity}'),
+                        trailing: Text(money(it.lineTotal),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary)),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _numField(String label, TextEditingController c) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: TextField(
           controller: c,
           keyboardType: TextInputType.number,
+          inputFormatters: [ThousandsInputFormatter()],
           decoration: InputDecoration(labelText: label, suffixText: 'đ'),
           onChanged: (_) => setState(() {}),
         ),

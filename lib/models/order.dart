@@ -29,41 +29,41 @@ class OrderItem {
   String get displayName => '$productName $packagingName';
 
   factory OrderItem.fromMap(Map<String, dynamic> m) => OrderItem(
-        productId: m['productId'] ?? '',
-        variantId: m['variantId'] ?? '',
-        packagingId: m['packagingId'] ?? '',
-        productName: m['productName'] ?? '',
-        variantName: m['variantName'] ?? '',
-        packagingName: m['packagingName'] ?? '',
-        quantity: (m['quantity'] ?? 0) as int,
-        unitPrice: (m['unitPrice'] ?? 0) as int,
-        imagePath: m['imagePath'],
-      );
+    productId: m['productId'] ?? '',
+    variantId: m['variantId'] ?? '',
+    packagingId: m['packagingId'] ?? '',
+    productName: m['productName'] ?? '',
+    variantName: m['variantName'] ?? '',
+    packagingName: m['packagingName'] ?? '',
+    quantity: (m['quantity'] ?? 0) as int,
+    unitPrice: (m['unitPrice'] ?? 0) as int,
+    imagePath: m['imagePath'],
+  );
 
   Map<String, dynamic> toMap() => {
-        'productId': productId,
-        'variantId': variantId,
-        'packagingId': packagingId,
-        'productName': productName,
-        'variantName': variantName,
-        'packagingName': packagingName,
-        'quantity': quantity,
-        'unitPrice': unitPrice,
-        'lineTotal': lineTotal,
-        'imagePath': imagePath,
-      };
+    'productId': productId,
+    'variantId': variantId,
+    'packagingId': packagingId,
+    'productName': productName,
+    'variantName': variantName,
+    'packagingName': packagingName,
+    'quantity': quantity,
+    'unitPrice': unitPrice,
+    'lineTotal': lineTotal,
+    'imagePath': imagePath,
+  };
 
   OrderItem copyWith({int? quantity}) => OrderItem(
-        productId: productId,
-        variantId: variantId,
-        packagingId: packagingId,
-        productName: productName,
-        variantName: variantName,
-        packagingName: packagingName,
-        quantity: quantity ?? this.quantity,
-        unitPrice: unitPrice,
-        imagePath: imagePath,
-      );
+    productId: productId,
+    variantId: variantId,
+    packagingId: packagingId,
+    productName: productName,
+    variantName: variantName,
+    packagingName: packagingName,
+    quantity: quantity ?? this.quantity,
+    unitPrice: unitPrice,
+    imagePath: imagePath,
+  );
 }
 
 /// One entry in the order timeline (spec §14). Append-only.
@@ -83,20 +83,20 @@ class TimelineEvent {
   });
 
   factory TimelineEvent.fromMap(Map<String, dynamic> m) => TimelineEvent(
-        at: DateTime.fromMillisecondsSinceEpoch((m['at'] ?? 0) as int),
-        title: m['title'] ?? '',
-        note: m['note'] ?? '',
-        actorId: m['actorId'] ?? '',
-        actorName: m['actorName'] ?? '',
-      );
+    at: DateTime.fromMillisecondsSinceEpoch((m['at'] ?? 0) as int),
+    title: m['title'] ?? '',
+    note: m['note'] ?? '',
+    actorId: m['actorId'] ?? '',
+    actorName: m['actorName'] ?? '',
+  );
 
   Map<String, dynamic> toMap() => {
-        'at': at.millisecondsSinceEpoch,
-        'title': title,
-        'note': note,
-        'actorId': actorId,
-        'actorName': actorName,
-      };
+    'at': at.millisecondsSinceEpoch,
+    'title': title,
+    'note': note,
+    'actorId': actorId,
+    'actorName': actorName,
+  };
 }
 
 class Order {
@@ -113,6 +113,7 @@ class Order {
   final String deliveryAddress;
   final String deliveryReceiver;
   final String deliveryPhone;
+  final String deliveryMapUrl; // link Google Maps (snapshot lúc tạo đơn)
 
   final List<OrderItem> items;
 
@@ -150,6 +151,7 @@ class Order {
     required this.deliveryAddress,
     required this.deliveryReceiver,
     required this.deliveryPhone,
+    this.deliveryMapUrl = '',
     required this.items,
     this.shippingFee = 0,
     this.discount = 0,
@@ -175,73 +177,88 @@ class Order {
   int get remaining => total - paidAmount; // còn phải thu
 
   factory Order.fromMap(String id, Map<String, dynamic> m) => Order(
-        id: id,
-        code: m['code'] ?? '',
-        createdAt:
-            DateTime.fromMillisecondsSinceEpoch((m['createdAt'] ?? 0) as int),
-        customerId: m['customerId'] ?? '',
-        customerName: m['customerName'] ?? '',
-        customerPhone: m['customerPhone'] ?? '',
-        deliveryLabel: m['deliveryLabel'] ?? '',
-        deliveryAddress: m['deliveryAddress'] ?? '',
-        deliveryReceiver: m['deliveryReceiver'] ?? '',
-        deliveryPhone: m['deliveryPhone'] ?? '',
-        items: ((m['items'] as List?) ?? [])
-            .map((e) => OrderItem.fromMap(Map<String, dynamic>.from(e)))
-            .toList(),
-        shippingFee: (m['shippingFee'] ?? 0) as int,
-        discount: (m['discount'] ?? 0) as int,
-        prepaid: (m['prepaid'] ?? 0) as int,
-        orderStatus:
-            enumFromName(OrderStatus.values, m['orderStatus'], OrderStatus.NEW),
-        warehouseStatus: enumFromName(
-            WarehouseStatus.values, m['warehouseStatus'], WarehouseStatus.WAITING),
-        deliveryStatus: enumFromName(DeliveryStatus.values, m['deliveryStatus'],
-            DeliveryStatus.WAITING_ASSIGNMENT),
-        paymentStatus: enumFromName(
-            PaymentStatus.values, m['paymentStatus'], PaymentStatus.UNPAID),
-        paidAmount: (m['paidAmount'] ?? 0) as int,
-        tripId: m['tripId'],
-        sequence: (m['sequence'] ?? 0) as int,
-        note: m['note'] ?? '',
-        deliveryNote: m['deliveryNote'] ?? '',
-        cancelReason: m['cancelReason'],
-        packageCount: m['packageCount'],
-        weightKg: (m['weightKg'] as num?)?.toDouble(),
-        timeline: ((m['timeline'] as List?) ?? [])
-            .map((e) => TimelineEvent.fromMap(Map<String, dynamic>.from(e)))
-            .toList(),
-      );
+    id: id,
+    code: m['code'] ?? '',
+    createdAt: DateTime.fromMillisecondsSinceEpoch(
+      (m['createdAt'] ?? 0) as int,
+    ),
+    customerId: m['customerId'] ?? '',
+    customerName: m['customerName'] ?? '',
+    customerPhone: m['customerPhone'] ?? '',
+    deliveryLabel: m['deliveryLabel'] ?? '',
+    deliveryAddress: m['deliveryAddress'] ?? '',
+    deliveryMapUrl: m['deliveryMapUrl'] ?? '',
+    deliveryReceiver: m['deliveryReceiver'] ?? '',
+    deliveryPhone: m['deliveryPhone'] ?? '',
+    items: ((m['items'] as List?) ?? [])
+        .map((e) => OrderItem.fromMap(Map<String, dynamic>.from(e)))
+        .toList(),
+    shippingFee: (m['shippingFee'] ?? 0) as int,
+    discount: (m['discount'] ?? 0) as int,
+    prepaid: (m['prepaid'] ?? 0) as int,
+    orderStatus: enumFromName(
+      OrderStatus.values,
+      m['orderStatus'],
+      OrderStatus.NEW,
+    ),
+    warehouseStatus: enumFromName(
+      WarehouseStatus.values,
+      m['warehouseStatus'],
+      WarehouseStatus.WAITING,
+    ),
+    deliveryStatus: enumFromName(
+      DeliveryStatus.values,
+      m['deliveryStatus'],
+      DeliveryStatus.WAITING_ASSIGNMENT,
+    ),
+    paymentStatus: enumFromName(
+      PaymentStatus.values,
+      m['paymentStatus'],
+      PaymentStatus.UNPAID,
+    ),
+    paidAmount: (m['paidAmount'] ?? 0) as int,
+    tripId: m['tripId'],
+    sequence: (m['sequence'] ?? 0) as int,
+    note: m['note'] ?? '',
+    deliveryNote: m['deliveryNote'] ?? '',
+    cancelReason: m['cancelReason'],
+    packageCount: m['packageCount'],
+    weightKg: (m['weightKg'] as num?)?.toDouble(),
+    timeline: ((m['timeline'] as List?) ?? [])
+        .map((e) => TimelineEvent.fromMap(Map<String, dynamic>.from(e)))
+        .toList(),
+  );
 
   Map<String, dynamic> toMap() => {
-        'code': code,
-        'createdAt': createdAt.millisecondsSinceEpoch,
-        'customerId': customerId,
-        'customerName': customerName,
-        'customerPhone': customerPhone,
-        'deliveryLabel': deliveryLabel,
-        'deliveryAddress': deliveryAddress,
-        'deliveryReceiver': deliveryReceiver,
-        'deliveryPhone': deliveryPhone,
-        'items': items.map((e) => e.toMap()).toList(),
-        'shippingFee': shippingFee,
-        'discount': discount,
-        'prepaid': prepaid,
-        'subtotal': subtotal,
-        'total': total,
-        'orderStatus': orderStatus.name,
-        'warehouseStatus': warehouseStatus.name,
-        'deliveryStatus': deliveryStatus.name,
-        'paymentStatus': paymentStatus.name,
-        'paidAmount': paidAmount,
-        'remaining': remaining,
-        'tripId': tripId,
-        'sequence': sequence,
-        'note': note,
-        'deliveryNote': deliveryNote,
-        'cancelReason': cancelReason,
-        'packageCount': packageCount,
-        'weightKg': weightKg,
-        'timeline': timeline.map((e) => e.toMap()).toList(),
-      };
+    'code': code,
+    'createdAt': createdAt.millisecondsSinceEpoch,
+    'customerId': customerId,
+    'customerName': customerName,
+    'customerPhone': customerPhone,
+    'deliveryLabel': deliveryLabel,
+    'deliveryAddress': deliveryAddress,
+    'deliveryMapUrl': deliveryMapUrl,
+    'deliveryReceiver': deliveryReceiver,
+    'deliveryPhone': deliveryPhone,
+    'items': items.map((e) => e.toMap()).toList(),
+    'shippingFee': shippingFee,
+    'discount': discount,
+    'prepaid': prepaid,
+    'subtotal': subtotal,
+    'total': total,
+    'orderStatus': orderStatus.name,
+    'warehouseStatus': warehouseStatus.name,
+    'deliveryStatus': deliveryStatus.name,
+    'paymentStatus': paymentStatus.name,
+    'paidAmount': paidAmount,
+    'remaining': remaining,
+    'tripId': tripId,
+    'sequence': sequence,
+    'note': note,
+    'deliveryNote': deliveryNote,
+    'cancelReason': cancelReason,
+    'packageCount': packageCount,
+    'weightKg': weightKg,
+    'timeline': timeline.map((e) => e.toMap()).toList(),
+  };
 }

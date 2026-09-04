@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
 import '../../core/formatters.dart';
+import '../../core/permissions.dart';
 import '../../core/theme.dart';
 import '../../models/fleet.dart';
 import '../../models/order.dart';
@@ -38,12 +39,15 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final db = context.read<Db>();
+    final role =
+        context.watch<AuthProvider>().user?.role ?? UserRole.shipper;
     return StreamBuilder<Trip>(
       stream: db.trip(widget.tripId),
       builder: (context, tsnap) {
         if (!tsnap.hasData) {
           return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
         final trip = tsnap.data!;
         return StreamBuilder<List<Order>>(
@@ -61,14 +65,21 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                       child: Column(
                         children: [
                           KVRow('Xe', trip.vehiclePlate),
-                          KVRow('Tài xế', '${trip.driverName}\n${trip.driverPhone}'),
+                          KVRow(
+                            'Tài xế',
+                            '${trip.driverName}\n${trip.driverPhone}',
+                          ),
                           KVRow('Trạng thái', tripStatusUi(trip.status).label),
-                          KVRow('Giờ dự kiến',
-                              fmtTime(trip.plannedDeparture)),
+                          KVRow('Giờ dự kiến', fmtTime(trip.plannedDeparture)),
                           if (trip.actualDeparture != null)
-                            KVRow('Giờ xuất phát', fmtTime(trip.actualDeparture)),
-                          KVRow('Số đơn',
-                              '${trip.deliveredCount}/${trip.orderCount} đã giao'),
+                            KVRow(
+                              'Giờ xuất phát',
+                              fmtTime(trip.actualDeparture),
+                            ),
+                          KVRow(
+                            'Số đơn',
+                            '${trip.deliveredCount}/${trip.orderCount} đã giao',
+                          ),
                         ],
                       ),
                     ),
@@ -77,9 +88,13 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Row(
                       children: [
-                        const Text('Danh sách đơn (kéo để sắp thứ tự)',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w700, fontSize: 13)),
+                        const Text(
+                          'Danh sách đơn (kéo để sắp thứ tự)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
                         const Spacer(),
                         TextButton.icon(
                           onPressed: () => _addOrders(context, db, trip),
@@ -107,32 +122,109 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                               return Card(
                                 key: ValueKey(o.id),
                                 margin: const EdgeInsets.only(bottom: 8),
-                                child: ListTile(
+                                child: InkWell(
                                   onTap: () => context.push('/orders/${o.id}'),
-                                  leading: CircleAvatar(
-                                    backgroundColor: AppColors.primaryLight,
-                                    child: Text('${i + 1}',
-                                        style: const TextStyle(
-                                            color: AppColors.primary,
-                                            fontWeight: FontWeight.w700)),
-                                  ),
-                                  title: Text(o.code,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w600)),
-                                  subtitle: Text(
-                                      '${o.customerName}\n${money(o.total)}'),
-                                  isThreeLine: true,
-                                  trailing: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      StatusChip(
-                                          deliveryStatusUi(o.deliveryStatus),
-                                          dense: true),
-                                      const SizedBox(height: 4),
-                                      const Icon(Icons.drag_handle,
-                                          color: AppColors.textSecondary),
-                                    ],
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 18,
+                                          backgroundColor:
+                                              AppColors.primaryLight,
+                                          child: Text(
+                                            '${i + 1}',
+                                            style: const TextStyle(
+                                              color: AppColors.primary,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                o.code,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                o.customerName,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color:
+                                                      AppColors.textSecondary,
+                                                ),
+                                              ),
+                                              Text(
+                                                money(o.total),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            StatusChip(
+                                              deliveryStatusUi(
+                                                o.deliveryStatus,
+                                              ),
+                                              dense: true,
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                InkWell(
+                                                  onTap: () => openMap(
+                                                    context,
+                                                    mapUrl: o.deliveryMapUrl,
+                                                    address: o.deliveryAddress,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
+                                                  child: const Padding(
+                                                    padding: EdgeInsets.all(8),
+                                                    child: Icon(
+                                                      Icons.navigation_outlined,
+                                                      size: 22,
+                                                      color: AppColors.primary,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                ReorderableDragStartListener(
+                                                  index: i,
+                                                  child: const Padding(
+                                                    padding: EdgeInsets.all(8),
+                                                    child: Icon(
+                                                      Icons.drag_handle,
+                                                      size: 22,
+                                                      color: AppColors
+                                                          .textSecondary,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               );
@@ -152,7 +244,9 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                               ? null
                               : () async {
                                   await db.reorderTripSequences(
-                                      trip.id, _local);
+                                    trip.id,
+                                    _local,
+                                  );
                                   if (context.mounted) {
                                     toast(context, 'Đã lưu thứ tự giao');
                                   }
@@ -162,14 +256,46 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: ElevatedButton(
-                          onPressed: (trip.status == TripStatus.READY &&
-                                  _local.isNotEmpty)
-                              ? () => _depart(context, db, trip)
-                              : null,
-                          child: Text(trip.status == TripStatus.IN_PROGRESS
-                              ? 'Đang giao'
-                              : 'Xuất phát'),
+                        child: Builder(
+                          builder: (_) {
+                            // Đơn chưa lên đường (mới xếp vào chuyến).
+                            final hasWaiting = _local.any(
+                              (o) =>
+                                  o.deliveryStatus == DeliveryStatus.ASSIGNED ||
+                                  o.deliveryStatus ==
+                                      DeliveryStatus.WAITING_ASSIGNMENT ||
+                                  o.deliveryStatus == DeliveryStatus.LOADING,
+                            );
+                            final inProgress =
+                                trip.status == TripStatus.IN_PROGRESS;
+                            final canGo =
+                                _local.isNotEmpty &&
+                                (trip.status == TripStatus.READY ||
+                                    (inProgress && hasWaiting));
+                            // Chỉ tài xế (shipper) / chủ được bấm Xuất phát.
+                            // Kiểm hàng chỉ xếp đơn, chờ tài xế xuất phát.
+                            if (!Perm.startTrip(role)) {
+                              return ElevatedButton(
+                                onPressed: null,
+                                child: Text(
+                                  inProgress
+                                      ? 'Đang giao'
+                                      : 'Chờ tài xế xuất phát',
+                                ),
+                              );
+                            }
+                            final label = trip.status == TripStatus.READY
+                                ? 'Xuất phát'
+                                : (inProgress && hasWaiting)
+                                ? 'Đẩy đơn mới sang giao'
+                                : 'Đang giao';
+                            return ElevatedButton(
+                              onPressed: canGo
+                                  ? () => _depart(context, db, trip)
+                                  : null,
+                              child: Text(label),
+                            );
+                          },
                         ),
                       ),
                     ],
@@ -185,11 +311,13 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
 
   Future<void> _depart(BuildContext context, Db db, Trip trip) async {
     final user = context.read<AuthProvider>().user!;
-    final ok = await confirmDialog(context,
-        title: 'Xuất phát',
-        message:
-            'Xác nhận xe xuất phát? Tất cả đơn trong chuyến sẽ chuyển sang "Đang giao".',
-        confirm: 'Xuất phát');
+    final ok = await confirmDialog(
+      context,
+      title: 'Xuất phát',
+      message:
+          'Xác nhận xe xuất phát? Tất cả đơn trong chuyến sẽ chuyển sang "Đang giao".',
+      confirm: 'Xuất phát',
+    );
     if (!ok) return;
     await db.reorderTripSequences(trip.id, _local);
     await db.departTrip(trip, user.id, user.name);
@@ -211,9 +339,10 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
               children: [
                 const Padding(
                   padding: EdgeInsets.all(16),
-                  child: Text('Đơn đã đóng hàng, chờ xếp chuyến',
-                      style: TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w700)),
+                  child: Text(
+                    'Đơn đã đóng hàng, chờ xếp chuyến',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
                 ),
                 Expanded(
                   child: pool.isEmpty
@@ -227,21 +356,30 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                                 margin: const EdgeInsets.only(bottom: 8),
                                 child: ListTile(
                                   leading: Avatar(o.customerName),
-                                  title: Text(o.code,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w600)),
+                                  title: Text(
+                                    o.code,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                                   subtitle: Text(
-                                      '${o.customerName}\n${o.deliveryAddress}'),
+                                    '${o.customerName}\n${o.deliveryAddress}',
+                                  ),
                                   isThreeLine: true,
                                   trailing: IconButton.filledTonal(
                                     icon: const Icon(Icons.add),
                                     onPressed: () async {
                                       try {
                                         await db.assignOrderToTrip(
-                                            o, trip, _local.length + 1);
+                                          o,
+                                          trip,
+                                          _local.length + 1,
+                                        );
                                         if (context.mounted) {
-                                          toast(context,
-                                              'Đã thêm ${o.code} vào chuyến');
+                                          toast(
+                                            context,
+                                            'Đã thêm ${o.code} vào chuyến',
+                                          );
                                         }
                                       } catch (e) {
                                         if (context.mounted) {

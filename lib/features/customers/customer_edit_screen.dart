@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../models/customer.dart';
 import '../../services/db.dart';
+import '../../services/image_service.dart';
 import '../../widgets/common.dart';
 
 class CustomerEditScreen extends StatefulWidget {
@@ -22,7 +24,17 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
       TextEditingController(text: widget.customer?.note ?? '');
   late List<CustomerAddress> _addresses =
       List.of(widget.customer?.addresses ?? []);
+  late String? _imagePath = widget.customer?.imagePath;
   bool _busy = false;
+  bool _dirty = false;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final c in [_name, _phone, _note]) {
+      c.addListener(() => _dirty = true);
+    }
+  }
 
   @override
   void dispose() {
@@ -30,6 +42,17 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
     _phone.dispose();
     _note.dispose();
     super.dispose();
+  }
+
+  /// Hỏi trước khi rời nếu có thay đổi chưa lưu.
+  Future<bool> _confirmLeave() async {
+    if (!_dirty) return true;
+    return confirmDialog(
+      context,
+      title: 'Rời khỏi?',
+      message: 'Thông tin chưa lưu sẽ bị mất. Bạn vẫn muốn thoát?',
+      confirm: 'Thoát',
+    );
   }
 
   Future<void> _save() async {
@@ -45,13 +68,16 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
       phone: _phone.text.trim(),
       note: _note.text.trim(),
       source: widget.customer?.source ?? '',
+      imagePath: _imagePath,
       addresses: _addresses,
     );
     final id = await db.upsertCustomer(c);
+    _dirty = false;
     if (mounted) Navigator.pop(context, id);
   }
 
   void _setDefault(int i) {
+    _dirty = true;
     setState(() {
       _addresses = [
         for (var j = 0; j < _addresses.length; j++)
@@ -67,7 +93,16 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
       MaterialPageRoute(
           builder: (_) => _AddressFormScreen(existing: existing)),
     );
+    // Trở về màn này: bỏ focus để không bung bàn phím.
+    // Chạy sau khung hình để ghi đè việc Flutter tự khôi phục focus cũ.
+    if (mounted) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        FocusManager.instance.primaryFocus?.unfocus();
+      });
+    }
     if (result == null) return;
+    _dirty = true;
     setState(() {
       if (index == null) {
         if (result.isDefault || _addresses.isEmpty) {
@@ -92,13 +127,41 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmLeave() && mounted) Navigator.pop(context);
+      },
+      child: Scaffold(
       appBar: AppBar(
           title: Text(
               widget.customer == null ? 'Thêm khách hàng' : 'Sửa khách hàng')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + MediaQuery.of(context).padding.bottom),
         children: [
+          Center(
+            child: ImagePickerBox(
+              path: _imagePath,
+              onTap: () async {
+                final path =
+                    await pickImage(context, context.read<ImageService>());
+                if (path != null) {
+                  setState(() {
+                    _imagePath = path;
+                    _dirty = true;
+                  });
+                }
+              },
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Center(
+            child: Text('Chạm để chọn ảnh khách',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          ),
+          const SizedBox(height: 16),
           _field('Họ tên', _name),
           _field('Số điện thoại', _phone, keyboard: TextInputType.phone),
           _field('Ghi chú', _note, maxLines: 2),
@@ -139,6 +202,7 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -154,7 +218,13 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
             child: Text(label,
                 style: const TextStyle(fontWeight: FontWeight.w600)),
           ),
-          TextField(controller: c, keyboardType: keyboard, maxLines: maxLines),
+          TextField(
+              controller: c,
+              keyboardType: keyboard,
+              maxLines: maxLines,
+              inputFormatters: keyboard == TextInputType.phone
+                  ? phoneInputFormatters
+                  : null),
         ],
       ),
     );
@@ -177,26 +247,67 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
   late final _address =
       TextEditingController(text: widget.existing?.address ?? '');
   late final _note = TextEditingController(text: widget.existing?.note ?? '');
+  late final _map = TextEditingController(text: widget.existing?.mapUrl ?? '');
   late bool _default = widget.existing?.isDefault ?? false;
+  bool _dirty = false;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final c in [_label, _receiver, _phone, _address, _note, _map]) {
+      c.addListener(() => _dirty = true);
+    }
+  }
+
+  Future<bool> _confirmLeave() async {
+    if (!_dirty) return true;
+    return confirmDialog(
+      context,
+      title: 'Rời khỏi?',
+      message: 'Địa chỉ chưa lưu sẽ bị mất. Bạn vẫn muốn thoát?',
+      confirm: 'Thoát',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmLeave() && mounted) Navigator.pop(context);
+      },
+      child: Scaffold(
       appBar: AppBar(
           title: Text(widget.existing == null ? 'Thêm địa chỉ' : 'Sửa địa chỉ')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + MediaQuery.of(context).padding.bottom),
         children: [
           _f('Tên địa chỉ', _label, hint: 'Cửa hàng 3'),
           _f('Người nhận', _receiver),
           _f('Số điện thoại', _phone, keyboard: TextInputType.phone),
           _f('Địa chỉ', _address, maxLines: 2),
+          _f('Link Google Maps (tùy chọn)', _map,
+              hint: 'Dán link vị trí từ app Google Maps'),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: OutlinedButton.icon(
+              onPressed: () =>
+                  openMap(context, mapUrl: _map.text, address: _address.text),
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('Mở trên Google Maps'),
+            ),
+          ),
           _f('Ghi chú', _note),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Đặt làm mặc định'),
             value: _default,
-            onChanged: (v) => setState(() => _default = v),
+            onChanged: (v) => setState(() {
+              _default = v;
+              _dirty = true;
+            }),
           ),
           const SizedBox(height: 16),
           ElevatedButton(
@@ -205,6 +316,7 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
                 toast(context, 'Nhập tên địa chỉ và địa chỉ');
                 return;
               }
+              _dirty = false;
               Navigator.pop(
                 context,
                 CustomerAddress(
@@ -214,6 +326,7 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
                   phone: _phone.text.trim(),
                   address: _address.text.trim(),
                   note: _note.text.trim(),
+                  mapUrl: _map.text.trim(),
                   isDefault: _default,
                 ),
               );
@@ -221,6 +334,7 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
             child: const Text('Lưu'),
           ),
         ],
+      ),
       ),
     );
   }
@@ -241,6 +355,9 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
               controller: c,
               keyboardType: keyboard,
               maxLines: maxLines,
+              inputFormatters: keyboard == TextInputType.phone
+                  ? phoneInputFormatters
+                  : null,
               decoration: InputDecoration(hintText: hint)),
         ],
       ),

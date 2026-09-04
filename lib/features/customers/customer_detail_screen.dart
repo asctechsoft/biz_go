@@ -51,7 +51,7 @@ class CustomerDetailScreen extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: Row(
                     children: [
-                      Avatar(c.name, size: 52),
+                      Avatar(c.name, size: 52, imagePath: c.imagePath),
                       const SizedBox(width: 12),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -105,12 +105,15 @@ class CustomerDetailScreen extends StatelessWidget {
                 ),
               ],
             ),
-            bottomNavigationBar: Padding(
-              padding: const EdgeInsets.all(12),
-              child: ElevatedButton.icon(
-                onPressed: () => context.push('/orders/create', extra: c),
-                icon: const Icon(Icons.add),
-                label: const Text('Tạo đơn'),
+            bottomNavigationBar: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: ElevatedButton.icon(
+                  onPressed: () => context.push('/orders/create', extra: c),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Tạo đơn'),
+                ),
               ),
             ),
           ),
@@ -266,7 +269,9 @@ class _DebtTab extends StatelessWidget {
           }
           return Padding(
             padding: EdgeInsets.only(
-                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom +
+                    MediaQuery.of(ctx).padding.bottom +
+                    16,
                 left: 16,
                 right: 16,
                 top: 16),

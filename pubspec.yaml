@@ -39,6 +39,10 @@ dependencies:
   flutter_slidable: ^4.0.0
   fl_chart: ^0.69.2
 
+  # Xuất báo cáo Excel + chia sẻ file
+  excel: ^4.0.6
+  share_plus: ^10.1.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

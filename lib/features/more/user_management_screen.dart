@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
+import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../models/app_user.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/db.dart';
 import '../../widgets/common.dart';
@@ -14,7 +16,11 @@ class UserManagementScreen extends StatelessWidget {
   const UserManagementScreen({super.key});
 
   // Chủ chỉ tạo được 2 vai trò này; tài khoản Chủ giữ duy nhất.
-  static const _creatableRoles = [UserRole.checker, UserRole.shipper];
+  static const _creatableRoles = [
+    UserRole.checker,
+    UserRole.warehouse,
+    UserRole.shipper,
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +42,7 @@ class UserManagementScreen extends StatelessWidget {
               final u = users[i];
               return Card(
                 child: ListTile(
+                  onTap: () => _editUser(context, u),
                   leading: Avatar(u.name, size: 42),
                   title: Text(u.name,
                       style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -67,6 +74,93 @@ class UserManagementScreen extends StatelessWidget {
     );
   }
 
+  /// Sửa hồ sơ user: tên (mọi vai trò) + vai trò (trừ Chủ). SĐT giữ nguyên.
+  Future<void> _editUser(BuildContext context, AppUser u) async {
+    final db = context.read<Db>();
+    final auth = context.read<AuthProvider>();
+    final nameC = TextEditingController(text: u.name);
+    UserRole role = u.role;
+    final isOwner = u.role == UserRole.owner;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom +
+                  MediaQuery.of(ctx).padding.bottom +
+                  16,
+              left: 16,
+              right: 16,
+              top: 16),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Sửa người dùng',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameC,
+                  decoration: const InputDecoration(labelText: 'Họ tên'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  enabled: false,
+                  controller: TextEditingController(text: u.phone),
+                  decoration: const InputDecoration(
+                      labelText: 'Số điện thoại (không đổi được)'),
+                ),
+                if (!isOwner) ...[
+                  const SizedBox(height: 12),
+                  const Text('Vai trò',
+                      style: TextStyle(
+                          fontSize: 13, color: AppColors.textSecondary)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final r in _creatableRoles)
+                        ChoiceChip(
+                          label: Text(r.label),
+                          selected: role == r,
+                          onSelected: (_) => setSheet(() => role = r),
+                        ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (nameC.text.trim().isEmpty) {
+                      toast(ctx, 'Vui lòng nhập họ tên');
+                      return;
+                    }
+                    await db.updateUser(
+                      u.id,
+                      name: nameC.text.trim(),
+                      role: isOwner ? null : role,
+                    );
+                    if (u.id == auth.user?.id) await auth.refreshProfile();
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    if (context.mounted) {
+                      toast(context, 'Đã cập nhật người dùng');
+                    }
+                  },
+                  child: const Text('Lưu'),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _createUser(BuildContext context) async {
     final nameC = TextEditingController();
     final phoneC = TextEditingController();
@@ -82,7 +176,9 @@ class UserManagementScreen extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) => Padding(
           padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom +
+                  MediaQuery.of(ctx).padding.bottom +
+                  16,
               left: 16,
               right: 16,
               top: 16),
@@ -129,7 +225,7 @@ class UserManagementScreen extends StatelessWidget {
                 TextField(
                   controller: phoneC,
                   keyboardType: TextInputType.phone,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  inputFormatters: phoneInputFormatters,
                   onChanged: (_) {
                     if (error != null) setSheet(() => error = null);
                   },

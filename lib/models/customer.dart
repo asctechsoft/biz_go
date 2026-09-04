@@ -7,6 +7,7 @@ class CustomerAddress {
   final String phone;
   final String address;
   final String note;
+  final String mapUrl; // link Google Maps (tùy chọn) để mở chỉ đường
   final bool isDefault;
 
   CustomerAddress({
@@ -16,6 +17,7 @@ class CustomerAddress {
     required this.phone,
     required this.address,
     this.note = '',
+    this.mapUrl = '',
     this.isDefault = false,
   }) : id = id ?? const Uuid().v4();
 
@@ -26,6 +28,7 @@ class CustomerAddress {
         phone: m['phone'] ?? '',
         address: m['address'] ?? '',
         note: m['note'] ?? '',
+        mapUrl: m['mapUrl'] ?? '',
         isDefault: m['isDefault'] ?? false,
       );
 
@@ -36,6 +39,7 @@ class CustomerAddress {
         'phone': phone,
         'address': address,
         'note': note,
+        'mapUrl': mapUrl,
         'isDefault': isDefault,
       };
 
@@ -46,6 +50,7 @@ class CustomerAddress {
         phone: phone,
         address: address,
         note: note,
+        mapUrl: mapUrl,
         isDefault: isDefault ?? this.isDefault,
       );
 }
@@ -56,6 +61,7 @@ class Customer {
   final String phone;
   final String note;
   final String source; // nguồn khách
+  final String? imagePath; // ảnh đại diện (đường dẫn local)
   final List<CustomerAddress> addresses;
 
   // Aggregates (kept denormalized for the customer detail screen).
@@ -70,6 +76,7 @@ class Customer {
     required this.phone,
     this.note = '',
     this.source = '',
+    this.imagePath,
     this.addresses = const [],
     this.totalPurchased = 0,
     this.totalPaid = 0,
@@ -88,6 +95,7 @@ class Customer {
         phone: m['phone'] ?? '',
         note: m['note'] ?? '',
         source: m['source'] ?? '',
+        imagePath: m['imagePath'],
         addresses: ((m['addresses'] as List?) ?? [])
             .map((e) => CustomerAddress.fromMap(Map<String, dynamic>.from(e)))
             .toList(),
@@ -102,6 +110,7 @@ class Customer {
         'phone': phone,
         'note': note,
         'source': source,
+        'imagePath': imagePath,
         'addresses': addresses.map((e) => e.toMap()).toList(),
         'totalPurchased': totalPurchased,
         'totalPaid': totalPaid,

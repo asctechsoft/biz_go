@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/enums.dart';
 import '../core/theme.dart';
@@ -132,10 +133,18 @@ class EmptyState extends StatelessWidget {
 class Avatar extends StatelessWidget {
   final String name;
   final double size;
-  const Avatar(this.name, {super.key, this.size = 44});
+  final String? imagePath; // ảnh local (nếu có) → hiện ảnh, không thì chữ cái
+  const Avatar(this.name, {super.key, this.size = 44, this.imagePath});
 
   @override
   Widget build(BuildContext context) {
+    if (ImageService.exists(imagePath)) {
+      return CircleAvatar(
+        radius: size / 2,
+        backgroundColor: AppColors.primaryLight,
+        backgroundImage: FileImage(File(imagePath!)),
+      );
+    }
     final initials = name.trim().isEmpty
         ? '?'
         : name.trim().split(' ').map((e) => e[0]).take(2).join().toUpperCase();
@@ -155,7 +164,7 @@ Future<bool> confirmDialog(BuildContext context,
     context: context,
     builder: (c) => AlertDialog(
       title: Text(title),
-      content: Text(message),
+      content: SizedBox(width: double.maxFinite, child: Text(message)),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(c, false), child: const Text('Hủy')),
@@ -173,6 +182,28 @@ void toast(BuildContext context, String msg) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(msg)));
+}
+
+/// Mở Google Maps ngoài app (không cần API key/quyền).
+/// Ưu tiên [mapUrl] đã lưu; nếu trống thì tìm theo [address].
+Future<void> openMap(
+  BuildContext context, {
+  String mapUrl = '',
+  String address = '',
+}) async {
+  final link = mapUrl.trim();
+  final raw = link.isNotEmpty
+      ? link
+      : 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address.trim())}';
+  try {
+    final ok = await launchUrl(
+      Uri.parse(raw),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok && context.mounted) toast(context, 'Không mở được Google Maps');
+  } catch (_) {
+    if (context.mounted) toast(context, 'Link bản đồ không hợp lệ');
+  }
 }
 
 /// Chọn nguồn ảnh (chụp / thư viện) rồi nén, trả về đường dẫn local.

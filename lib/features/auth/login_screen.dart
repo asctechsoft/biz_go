@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/seed_service.dart';
@@ -75,6 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextField(
                   controller: _phone,
                   keyboardType: TextInputType.phone,
+                  inputFormatters: phoneInputFormatters,
                   decoration: const InputDecoration(hintText: 'Nhập số điện thoại'),
                 ),
                 const SizedBox(height: 16),

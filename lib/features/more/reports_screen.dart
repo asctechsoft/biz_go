@@ -9,23 +9,102 @@ import '../../models/fleet.dart';
 import '../../models/order.dart';
 import '../../models/payment.dart';
 import '../../services/db.dart';
+import '../../services/excel_export.dart';
 import '../../widgets/common.dart';
 
-class ReportsScreen extends StatelessWidget {
+enum ReportPeriod { week, month, quarter, year }
+
+class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
+  @override
+  State<ReportsScreen> createState() => _ReportsScreenState();
+}
+
+class _ReportsScreenState extends State<ReportsScreen> {
+  ReportPeriod _period = ReportPeriod.week;
+
+  /// Khoảng thời gian [từ, đến] theo kỳ đang chọn (đến = bây giờ).
+  DateTimeRange _range() {
+    final now = DateTime.now();
+    switch (_period) {
+      case ReportPeriod.week:
+        return DateTimeRange(
+            start: DateTime(now.year, now.month, now.day)
+                .subtract(const Duration(days: 6)),
+            end: now);
+      case ReportPeriod.month:
+        return DateTimeRange(start: DateTime(now.year, now.month, 1), end: now);
+      case ReportPeriod.quarter:
+        final startMonth = ((now.month - 1) ~/ 3) * 3 + 1;
+        return DateTimeRange(
+            start: DateTime(now.year, startMonth, 1), end: now);
+      case ReportPeriod.year:
+        return DateTimeRange(start: DateTime(now.year, 1, 1), end: now);
+    }
+  }
+
+  String get _periodLabel {
+    final now = DateTime.now();
+    switch (_period) {
+      case ReportPeriod.week:
+        return '7 ngày qua';
+      case ReportPeriod.month:
+        return 'Tháng ${now.month}/${now.year}';
+      case ReportPeriod.quarter:
+        return 'Quý ${((now.month - 1) ~/ 3) + 1}/${now.year}';
+      case ReportPeriod.year:
+        return 'Năm ${now.year}';
+    }
+  }
+
+  bool _inRange(DateTime t, DateTimeRange r) {
+    final start = DateTime(r.start.year, r.start.month, r.start.day);
+    final end = DateTime(r.end.year, r.end.month, r.end.day, 23, 59, 59);
+    return !t.isBefore(start) && !t.isAfter(end);
+  }
+
+  Future<void> _exportExcel(BuildContext context, Db db) async {
+    final range = _range();
+    toast(context, 'Đang tạo Excel ($_periodLabel)...');
+    try {
+      final orders = await db.orders().first;
+      final customers = await db.customers().first;
+      await ExcelExport.exportReport(
+        orders: orders,
+        customers: customers,
+        from: range.start,
+        to: range.end,
+      );
+    } catch (e) {
+      if (context.mounted) toast(context, 'Lỗi xuất Excel: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final db = context.read<Db>();
+    final range = _range();
     return Scaffold(
-      appBar: AppBar(title: const Text('Báo cáo')),
+      appBar: AppBar(
+        title: const Text('Báo cáo'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.file_download_outlined),
+            tooltip: 'Xuất Excel ($_periodLabel)',
+            onPressed: () => _exportExcel(context, db),
+          ),
+        ],
+      ),
       body: StreamBuilder<List<Order>>(
         stream: db.orders(),
         builder: (context, snap) {
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final orders = snap.data!;
+          // Lọc đơn theo kỳ đang chọn.
+          final orders = snap.data!
+              .where((o) => _inRange(o.createdAt, range))
+              .toList();
           final active =
               orders.where((o) => o.orderStatus != OrderStatus.CANCELLED).toList();
           final revenue = active.fold<int>(0, (s, o) => s + o.total);
@@ -57,14 +136,18 @@ class ReportsScreen extends StatelessWidget {
           return StreamBuilder<List<Payment>>(
             stream: _allPayments(db),
             builder: (context, psnap) {
-              final actualCollected =
-                  (psnap.data ?? []).fold<int>(0, (s, p) => s + p.amount);
+              final actualCollected = (psnap.data ?? [])
+                  .where((p) => _inRange(p.at, range))
+                  .fold<int>(0, (s, p) => s + p.amount);
               return ListView(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(
+                    16, 16, 16, 24 + MediaQuery.of(context).padding.bottom),
                 children: [
-                  const Text('Tổng quan kinh doanh',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  _periodSelector(),
+                  const SizedBox(height: 16),
+                  Text('Tổng quan · $_periodLabel',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 12),
                   Row(children: [
                     _metric('Doanh số', money(revenue), AppColors.primary),
@@ -120,11 +203,11 @@ class ReportsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  const Text('Doanh số 7 ngày',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  Text('Doanh số · $_periodLabel',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
-                  _SevenDayChart(orders: active),
+                  _PeriodChart(orders: active, period: _period),
                   const SizedBox(height: 20),
                   const Text('Công nợ theo khách',
                       style:
@@ -144,6 +227,28 @@ class ReportsScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+
+  Widget _periodSelector() {
+    String label(ReportPeriod p) => switch (p) {
+          ReportPeriod.week => 'Tuần',
+          ReportPeriod.month => 'Tháng',
+          ReportPeriod.quarter => 'Quý',
+          ReportPeriod.year => 'Năm',
+        };
+    return Row(
+      children: [
+        for (final p in ReportPeriod.values)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(label(p)),
+              selected: _period == p,
+              onSelected: (_) => setState(() => _period = p),
+            ),
+          ),
+      ],
     );
   }
 
@@ -169,63 +274,102 @@ class ReportsScreen extends StatelessWidget {
       );
 }
 
-/// Simple 7-day revenue bar chart (no external chart lib).
-class _SevenDayChart extends StatelessWidget {
+/// Biểu đồ cột doanh số theo kỳ (tuần: theo ngày; tháng: theo ngày;
+/// quý/năm: theo tháng). Không dùng thư viện chart ngoài.
+class _PeriodChart extends StatelessWidget {
   final List<Order> orders;
-  const _SevenDayChart({required this.orders});
+  final ReportPeriod period;
+  const _PeriodChart({required this.orders, required this.period});
+
+  /// Danh sách cột (nhãn, tổng tiền) theo kỳ.
+  List<(String, int)> _buckets() {
+    final now = DateTime.now();
+    int sumDay(DateTime d) => orders
+        .where((o) =>
+            o.createdAt.year == d.year &&
+            o.createdAt.month == d.month &&
+            o.createdAt.day == d.day)
+        .fold<int>(0, (s, o) => s + o.total);
+    int sumMonth(int y, int m) => orders
+        .where((o) => o.createdAt.year == y && o.createdAt.month == m)
+        .fold<int>(0, (s, o) => s + o.total);
+
+    switch (period) {
+      case ReportPeriod.week:
+        const wd = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+        return [
+          for (var i = 0; i < 7; i++)
+            () {
+              final d = DateTime(now.year, now.month, now.day)
+                  .subtract(Duration(days: 6 - i));
+              return (wd[d.weekday - 1], sumDay(d));
+            }()
+        ];
+      case ReportPeriod.month:
+        return [
+          for (var day = 1; day <= now.day; day++)
+            ('$day', sumDay(DateTime(now.year, now.month, day)))
+        ];
+      case ReportPeriod.quarter:
+        final startMonth = ((now.month - 1) ~/ 3) * 3 + 1;
+        return [
+          for (var m = startMonth; m <= now.month; m++)
+            ('T$m', sumMonth(now.year, m))
+        ];
+      case ReportPeriod.year:
+        return [
+          for (var m = 1; m <= now.month; m++)
+            ('T$m', sumMonth(now.year, m))
+        ];
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final days = List.generate(7, (i) {
-      final d = DateTime(now.year, now.month, now.day)
-          .subtract(Duration(days: 6 - i));
-      return d;
-    });
-    final totals = [
-      for (final d in days)
-        orders
-            .where((o) =>
-                o.createdAt.year == d.year &&
-                o.createdAt.month == d.month &&
-                o.createdAt.day == d.day)
-            .fold<int>(0, (s, o) => s + o.total)
+    final data = _buckets();
+    final maxV = data.fold<int>(1, (m, e) => e.$2 > m ? e.$2 : m);
+    // Nhiều cột (tháng) → cho cuộn ngang, cột đủ rộng để đọc.
+    final many = data.length > 8;
+    final barW = many ? 34.0 : null;
+    final bars = <Widget>[
+      for (final e in data)
+        SizedBox(
+          width: barW,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Text(
+                e.$2 == 0 ? '' : '${(e.$2 / 1000).round()}k',
+                style: const TextStyle(
+                    fontSize: 9, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 2),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                height: 90 * (e.$2 / maxV),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(e.$1, style: const TextStyle(fontSize: 10)),
+            ],
+          ),
+        ),
     ];
-    final maxV = totals.fold<int>(1, (m, v) => v > m ? v : m);
-    const labels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
     return SectionCard(
       child: SizedBox(
         height: 140,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            for (var i = 0; i < 7; i++)
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text(
-                      totals[i] == 0 ? '' : '${(totals[i] / 1000).round()}k',
-                      style: const TextStyle(
-                          fontSize: 9, color: AppColors.textSecondary),
-                    ),
-                    const SizedBox(height: 2),
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      height: 90 * (totals[i] / maxV),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(labels[days[i].weekday - 1],
-                        style: const TextStyle(fontSize: 10)),
-                  ],
-                ),
+        child: many
+            ? SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: bars),
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [for (final b in bars) Expanded(child: b)],
               ),
-          ],
-        ),
       ),
     );
   }

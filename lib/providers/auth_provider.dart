@@ -50,6 +50,16 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Nạp lại hồ sơ user hiện tại (sau khi sửa tên...).
+  Future<void> refreshProfile() async {
+    if (user == null) return;
+    final fresh = await _auth.loadProfile(user!.id);
+    if (fresh != null) {
+      user = fresh;
+      notifyListeners();
+    }
+  }
+
   Future<void> signOut() async {
     if (user != null) await _push.unregister(user!.id);
     await _auth.signOut();

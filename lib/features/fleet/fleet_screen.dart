@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -8,17 +8,17 @@ import '../../services/db.dart';
 import '../../widgets/common.dart';
 
 const _vehicleTypes = [
-  'Táº£i 1.25T',
-  'Táº£i 2.5T',
-  'Táº£i 5T',
+  'Tải 1.25T',
+  'Tải 2.5T',
+  'Tải 5T',
   'Van',
-  'Xe bÃ¡n táº£i',
-  'Xe mÃ¡y',
+  'Xe bán tải',
+  'Xe máy',
 ];
-const _vehicleStatuses = ['Ráº£nh', 'Äang cháº¡y', 'Báº£o dÆ°á»¡ng'];
+const _vehicleStatuses = ['Rảnh', 'Đang chạy', 'Bảo dưỡng'];
 
-/// Auto-format biá»ƒn sá»‘ khi gÃµ: viáº¿t HOA, chá»‰ chá»¯+sá»‘, chÃ¨n '-' sau 3 kÃ½ tá»±.
-/// VD gÃµ "29c12345" â†’ "29C-12345".
+/// Auto-format biển số khi gõ: viết HOA, chỉ chữ+số, chèn '-' sau 3 ký tự.
+/// VD gõ "29c12345" → "29C-12345".
 class _PlateFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
@@ -35,8 +35,8 @@ class _PlateFormatter extends TextInputFormatter {
   }
 }
 
-/// Ã” "chá»n" trÃ´ng nhÆ° text field, báº¥m vÃ o má»Ÿ danh sÃ¡ch chá»n (xá»• tá»« dÆ°á»›i lÃªn,
-/// khÃ´ng Ä‘Ã¨ lÃªn field khÃ¡c).
+/// Ô "chọn" trông như text field, bấm vào mở danh sách chọn (xổ từ dưới lên,
+/// không đè lên field khác).
 Widget _selectField({
   required String label,
   required String value,
@@ -50,7 +50,7 @@ Widget _selectField({
       child: Row(
         children: [
           Expanded(
-            child: Text(value.isEmpty ? 'Chá»n...' : value,
+            child: Text(value.isEmpty ? 'Chọn...' : value,
                 style: TextStyle(
                     color: value.isEmpty
                         ? AppColors.textSecondary
@@ -117,8 +117,8 @@ Future<String?> _pickFromList(
   );
 }
 
-/// Â§10.1 â€” quáº£n lÃ½ xe (thÃªm/sá»­a/xÃ³a). TÃ i xáº¿ = tÃ i khoáº£n Giao hÃ ng, quáº£n á»Ÿ
-/// mÃ n Quáº£n lÃ½ ngÆ°á»i dÃ¹ng.
+/// §10.1 — quản lý xe (thêm/sửa/xóa). Tài xế = tài khoản Giao hàng, quản ở
+/// màn Quản lý người dùng.
 class FleetScreen extends StatelessWidget {
   const FleetScreen({super.key});
 
@@ -126,7 +126,7 @@ class FleetScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final db = context.read<Db>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Quáº£n lÃ½ xe')),
+      appBar: AppBar(title: const Text('Quản lý xe')),
       body: _VehicleTab(db: db),
     );
   }
@@ -144,7 +144,7 @@ class _VehicleTab extends StatelessWidget {
         builder: (context, snap) {
           final list = snap.data ?? [];
           if (snap.hasData && list.isEmpty) {
-            return const EmptyState(text: 'ChÆ°a cÃ³ xe');
+            return const EmptyState(text: 'Chưa có xe');
           }
           return ListView.separated(
             padding: const EdgeInsets.all(12),
@@ -158,7 +158,7 @@ class _VehicleTab extends StatelessWidget {
                       color: AppColors.primary),
                   title: Text(v.plate,
                       style: const TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: Text('${v.type} Â· ${v.capacityKg}kg Â· ${v.status}'),
+                  subtitle: Text('${v.type} · ${v.capacityKg}kg · ${v.status}'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => _edit(context, v),
                 ),
@@ -179,7 +179,7 @@ class _VehicleTab extends StatelessWidget {
     final capC = TextEditingController(
         text: existing == null ? '' : '${existing.capacityKg}');
     String type = existing?.type ?? '';
-    String status = existing?.status ?? 'Ráº£nh';
+    String status = existing?.status ?? 'Rảnh';
     String? error;
 
     await showModalBottomSheet(
@@ -188,7 +188,9 @@ class _VehicleTab extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) => Padding(
           padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom +
+                  MediaQuery.of(ctx).padding.bottom +
+                  16,
               left: 16,
               right: 16,
               top: 16),
@@ -197,7 +199,7 @@ class _VehicleTab extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(existing == null ? 'ThÃªm xe' : 'Sá»­a xe',
+                Text(existing == null ? 'Thêm xe' : 'Sửa xe',
                     style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 16),
@@ -213,14 +215,14 @@ class _VehicleTab extends StatelessWidget {
                       if (error != null) setSheet(() => error = null);
                     },
                     decoration: const InputDecoration(
-                        labelText: 'Biá»ƒn sá»‘', hintText: '29C-12345')),
+                        labelText: 'Biển số', hintText: '29C-12345')),
                 const SizedBox(height: 12),
                 _selectField(
-                  label: 'Loáº¡i xe',
+                  label: 'Loại xe',
                   value: type,
                   onTap: () async {
                     final v = await _pickFromList(
-                        ctx, 'Chá»n loáº¡i xe', _vehicleTypes, type);
+                        ctx, 'Chọn loại xe', _vehicleTypes, type);
                     if (v != null) {
                       setSheet(() {
                         type = v;
@@ -234,14 +236,14 @@ class _VehicleTab extends StatelessWidget {
                     controller: capC,
                     keyboardType: TextInputType.number,
                     decoration:
-                        const InputDecoration(labelText: 'Táº£i trá»ng (kg)')),
+                        const InputDecoration(labelText: 'Tải trọng (kg)')),
                 const SizedBox(height: 12),
                 _selectField(
-                  label: 'Tráº¡ng thÃ¡i',
+                  label: 'Trạng thái',
                   value: status,
                   onTap: () async {
                     final v = await _pickFromList(
-                        ctx, 'Tráº¡ng thÃ¡i xe', _vehicleStatuses, status);
+                        ctx, 'Trạng thái xe', _vehicleStatuses, status);
                     if (v != null) setSheet(() => status = v);
                   },
                 ),
@@ -257,8 +259,9 @@ class _VehicleTab extends StatelessWidget {
                           onPressed: () async {
                             await db.deleteVehicle(existing.id);
                             if (ctx.mounted) Navigator.pop(ctx);
+                            if (context.mounted) toast(context, 'Đã xóa xe');
                           },
-                          child: const Text('XÃ³a'),
+                          child: const Text('Xóa'),
                         ),
                       ),
                     if (existing != null) const SizedBox(width: 12),
@@ -266,11 +269,11 @@ class _VehicleTab extends StatelessWidget {
                       child: ElevatedButton(
                         onPressed: () async {
                           if (plateC.text.trim().isEmpty) {
-                            setSheet(() => error = 'Vui lÃ²ng nháº­p biá»ƒn sá»‘ xe');
+                            setSheet(() => error = 'Vui lòng nhập biển số xe');
                             return;
                           }
                           if (type.isEmpty) {
-                            setSheet(() => error = 'Vui lÃ²ng chá»n loáº¡i xe');
+                            setSheet(() => error = 'Vui lòng chọn loại xe');
                             return;
                           }
                           await db.upsertVehicle(Vehicle(
@@ -284,8 +287,12 @@ class _VehicleTab extends StatelessWidget {
                             status: status,
                           ));
                           if (ctx.mounted) Navigator.pop(ctx);
+                          if (context.mounted) {
+                            toast(context,
+                                existing == null ? 'Đã thêm xe' : 'Đã lưu xe');
+                          }
                         },
-                        child: const Text('LÆ°u'),
+                        child: const Text('Lưu'),
                       ),
                     ),
                   ],

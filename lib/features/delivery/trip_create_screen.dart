@@ -44,18 +44,28 @@ class _TripCreateScreenState extends State<TripCreateScreen> {
       _departure.hour,
       _departure.minute,
     );
-    final trip = await db.createTrip(
-      runDate: _runDate,
-      vehicle: _vehicle!,
-      driver: Driver(
-        id: _driver!.id, // uid tài khoản → app tài xế lọc chuyến theo id này
-        name: _driver!.name,
-        phone: _driver!.phone,
-      ),
-      plannedDeparture: planned,
-      note: _note.text.trim(),
-    );
-    if (mounted) context.pushReplacement('/trips/${trip.id}');
+    try {
+      final trip = await db.createTrip(
+        runDate: _runDate,
+        vehicle: _vehicle!,
+        driver: Driver(
+          id: _driver!.id, // uid tài khoản → app tài xế lọc chuyến theo id này
+          name: _driver!.name,
+          phone: _driver!.phone,
+        ),
+        plannedDeparture: planned,
+        note: _note.text.trim(),
+      );
+      if (mounted) {
+        toast(context, 'Đã tạo chuyến ${trip.code}');
+        context.pushReplacement('/trips/${trip.id}');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        toast(context, 'Lỗi tạo chuyến: $e');
+      }
+    }
   }
 
   Widget _emptyNotice(String message, String route) {
@@ -259,7 +269,14 @@ class _TripCreateScreenState extends State<TripCreateScreen> {
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: _busy ? null : _save,
-            child: const Text('Lưu chuyến'),
+            child: _busy
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Lưu chuyến'),
           ),
         ],
       ),

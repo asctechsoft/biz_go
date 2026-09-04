@@ -79,15 +79,62 @@ class _QuickFilterScreenState extends State<QuickFilterScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _Label(label),
-          DropdownButtonFormField<String>(
-            initialValue: value,
-            items: [
-              for (final o in options)
-                DropdownMenuItem(value: o, child: Text(o))
-            ],
-            onChanged: (v) => onChanged(v!),
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () async {
+              final picked = await _pick(label, options, value);
+              if (picked != null) onChanged(picked);
+            },
+            child: InputDecorator(
+              decoration: const InputDecoration(),
+              child: Row(
+                children: [
+                  Expanded(
+                      child: Text(value,
+                          style: const TextStyle(fontWeight: FontWeight.w600))),
+                  const Icon(Icons.arrow_drop_down,
+                      color: AppColors.textSecondary),
+                ],
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Bottom sheet chọn 1 giá trị (thay DropdownButtonFormField hay bung/đè).
+  Future<String?> _pick(String title, List<String> options, String current) {
+    return showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+            for (final o in options)
+              ListTile(
+                title: Text(o,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                trailing: current == o
+                    ? const Icon(Icons.check, color: AppColors.primary)
+                    : null,
+                onTap: () => Navigator.pop(ctx, o),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }

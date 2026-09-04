@@ -65,23 +65,31 @@ class MoreScreen extends StatelessWidget {
                         child: Avatar(user?.name ?? '?', size: 50),
                       ),
                       const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            user?.name ?? '',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              user?.name ?? '',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                          Text(
-                            '${user?.role.label ?? ''} · ${user?.phone ?? ''}',
-                            style: const TextStyle(color: Colors.white70),
-                          ),
-                        ],
+                            Text(
+                              '${user?.role.label ?? ''} · ${user?.phone ?? ''}',
+                              style: const TextStyle(color: Colors.white70),
+                            ),
+                          ],
+                        ),
                       ),
+                      if (user != null)
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.white),
+                          tooltip: 'Sửa thông tin',
+                          onPressed: () => _editProfile(context, auth),
+                        ),
                     ],
                   ),
                 ],
@@ -167,10 +175,86 @@ class MoreScreen extends StatelessWidget {
                 message: 'Bạn chắc chắn muốn đăng xuất?',
                 confirm: 'Đăng xuất',
               );
-              if (ok) await auth.signOut();
+              if (!ok || !context.mounted) return;
+              // Hiện loading trong lúc đăng xuất (huỷ token, xoá phiên).
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+              await auth.signOut();
+              // Đóng dialog loading (router sẽ redirect về login).
+              if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
             },
           ),
         ],
+      ),
+    );
+  }
+
+  /// Sửa thông tin cá nhân (tên). SĐT & vai trò giữ nguyên.
+  Future<void> _editProfile(BuildContext context, AuthProvider auth) async {
+    final db = context.read<Db>();
+    final user = auth.user;
+    if (user == null) return;
+    final nameC = TextEditingController(text: user.name);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom:
+              MediaQuery.of(ctx).viewInsets.bottom +
+              MediaQuery.of(ctx).padding.bottom +
+              16,
+          left: 16,
+          right: 16,
+          top: 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Sửa thông tin',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: nameC,
+              decoration: const InputDecoration(labelText: 'Họ tên'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              enabled: false,
+              controller: TextEditingController(text: user.phone),
+              decoration: const InputDecoration(
+                labelText: 'Số điện thoại (không đổi được)',
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () async {
+                  if (nameC.text.trim().isEmpty) {
+                    toast(ctx, 'Vui lòng nhập họ tên');
+                    return;
+                  }
+                  await db.updateUser(user.id, name: nameC.text.trim());
+                  await auth.refreshProfile();
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (context.mounted) toast(context, 'Đã cập nhật thông tin');
+                },
+                child: const Text('Lưu'),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }

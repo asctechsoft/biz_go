@@ -57,7 +57,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                     return Card(
                       child: ListTile(
                         onTap: () => context.push('/customers/${c.id}'),
-                        leading: Avatar(c.name),
+                        leading: Avatar(c.name, imagePath: c.imagePath),
                         title: Text(c.name,
                             style: const TextStyle(fontWeight: FontWeight.w600)),
                         subtitle: Text(c.phone),
@@ -77,12 +77,15 @@ class _CustomersScreenState extends State<CustomersScreen> {
               },
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: ElevatedButton.icon(
-              onPressed: () => context.push('/customers/new'),
-              icon: const Icon(Icons.add),
-              label: const Text('Thêm khách hàng'),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: ElevatedButton.icon(
+                onPressed: () => context.push('/customers/new'),
+                icon: const Icon(Icons.add),
+                label: const Text('Thêm khách hàng'),
+              ),
             ),
           ),
         ],

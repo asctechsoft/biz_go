@@ -9,7 +9,7 @@ import '../../widgets/common.dart';
 class ShopInfo {
   static const name = 'BizGo';
   static const phone = '0900 000 000';
-  static const address = 'Xưởng sấy dẻo — Giao hàng toàn quốc';
+  static const address = 'Cùi Bưởi Minh Thư';
 }
 
 /// Phiếu giao hàng (§8): mẫu hóa đơn xem trước + in. Bluetooth in sau.

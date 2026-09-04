@@ -54,6 +54,15 @@ class Db {
 
   Future<void> setUserActive(String uid, bool active) =>
       _users.doc(uid).update({'active': active});
+
+  /// Cập nhật hồ sơ user (tên / vai trò). Không đổi SĐT vì gắn với đăng nhập.
+  Future<void> updateUser(String uid, {String? name, UserRole? role}) {
+    final data = <String, dynamic>{};
+    if (name != null) data['name'] = name;
+    if (role != null) data['role'] = role.name;
+    if (data.isEmpty) return Future.value();
+    return _users.doc(uid).update(data);
+  }
   CollectionReference<Map<String, dynamic>> get _priceHistory =>
       _db.collection('price_history');
   CollectionReference<Map<String, dynamic>> get _audits =>
@@ -125,6 +134,32 @@ class Db {
   }
 
   Future<void> deleteProduct(String id) => _products.doc(id).delete();
+
+  // ---------- Đơn vị quy cách (units) ----------
+  static const defaultUnits = ['gam', 'kg', 'tạ', 'tấn'];
+  DocumentReference<Map<String, dynamic>> get _unitsDoc =>
+      _db.collection('meta').doc('product_units');
+
+  /// Danh sách đơn vị: mặc định + các đơn vị tùy chỉnh đã lưu.
+  Stream<List<String>> units() => _unitsDoc.snapshots().map((d) {
+        final custom = ((d.data()?['items'] as List?) ?? [])
+            .map((e) => e.toString())
+            .toList();
+        final all = [...defaultUnits];
+        for (final u in custom) {
+          if (!all.contains(u)) all.add(u);
+        }
+        return all;
+      });
+
+  /// Lưu đơn vị tùy chỉnh mới vào list (bỏ qua nếu trùng default).
+  Future<void> addUnit(String unit) async {
+    final u = unit.trim();
+    if (u.isEmpty || defaultUnits.contains(u)) return;
+    await _unitsDoc.set({
+      'items': FieldValue.arrayUnion([u]),
+    }, SetOptions(merge: true));
+  }
 
   // ---------- Customers ----------
   Stream<List<Customer>> customers() => _customers
@@ -629,15 +664,24 @@ class Db {
     if (o.tripId != null && o.tripId != t.id) {
       throw Exception('Đơn đã thuộc chuyến khác.');
     }
+    // Chuyến đã xuất phát → đơn mới vào chuyến chuyển thẳng sang Đang giao,
+    // nếu không sẽ kẹt ASSIGNED (không hiện nút giao, không xuất phát lại được).
+    final departed = t.status == TripStatus.IN_PROGRESS;
+    final now = DateTime.now();
     await _orders.doc(o.id).update({
       'tripId': t.id,
       'sequence': sequence,
-      'deliveryStatus': DeliveryStatus.ASSIGNED.name,
+      'deliveryStatus': (departed
+              ? DeliveryStatus.ON_THE_WAY
+              : DeliveryStatus.ASSIGNED)
+          .name,
     });
     await _appendTimeline(
-        o.id,
-        TimelineEvent(
-            at: DateTime.now(), title: 'Đã lên chuyến ${t.code}'));
+        o.id, TimelineEvent(at: now, title: 'Đã lên chuyến ${t.code}'));
+    if (departed) {
+      await _appendTimeline(o.id,
+          TimelineEvent(at: now, title: 'Xe đang giao (chuyến đã xuất phát)'));
+    }
     await _recountTrip(t.id);
     await _notify(
         title: 'Bạn có đơn trong chuyến ${t.code}',
@@ -671,22 +715,57 @@ class Db {
     final orders = snap.docs.map((d) => Order.fromMap(d.id, d.data())).toList();
     final delivered =
         orders.where((o) => o.deliveryStatus == DeliveryStatus.DELIVERED).length;
-    await _trips.doc(tripId).update({
+    // Còn đơn nào đang chờ xử lý (chưa giao/hoàn) không?
+    const pending = {
+      DeliveryStatus.WAITING_ASSIGNMENT,
+      DeliveryStatus.ASSIGNED,
+      DeliveryStatus.LOADING,
+      DeliveryStatus.ON_THE_WAY,
+      DeliveryStatus.ARRIVED,
+      DeliveryStatus.RESCHEDULED,
+    };
+    final anyPending = orders.any((o) => pending.contains(o.deliveryStatus));
+
+    final data = <String, dynamic>{
       'orderCount': orders.length,
       'deliveredCount': delivered,
-    });
+    };
+    // Chuyến đã xuất phát + hết đơn chờ → tự hoàn thành chuyến.
+    final tripDoc = await _trips.doc(tripId).get();
+    final curStatus = tripDoc.data()?['status'];
+    if (orders.isNotEmpty &&
+        !anyPending &&
+        curStatus == TripStatus.IN_PROGRESS.name) {
+      data['status'] = TripStatus.COMPLETED.name;
+    }
+    await _trips.doc(tripId).update(data);
   }
 
-  /// Trip departs (spec §11.2): trip IN_PROGRESS, all orders ON_THE_WAY.
+  /// Xe xuất phát (§11.2) — hoặc "đẩy tiếp" đơn mới xếp vào chuyến đang chạy.
+  /// Chỉ chuyển đơn CHƯA đi (ASSIGNED/WAITING/LOADING) sang ON_THE_WAY;
+  /// KHÔNG đụng đơn đã giao/hoàn/hẹn lại. Chạy lại nhiều lần vẫn an toàn.
   Future<void> departTrip(Trip t, String actorId, String actorName) async {
     final now = DateTime.now();
-    await _trips.doc(t.id).update({
+    final wasInProgress = t.status == TripStatus.IN_PROGRESS;
+    final tripData = <String, dynamic>{
       'status': TripStatus.IN_PROGRESS.name,
-      'actualDeparture': now.millisecondsSinceEpoch,
-    });
+    };
+    // Chỉ ghi giờ xuất phát ở lần đầu.
+    if (!wasInProgress) {
+      tripData['actualDeparture'] = now.millisecondsSinceEpoch;
+    }
+    await _trips.doc(t.id).update(tripData);
+
+    const toDepart = {
+      DeliveryStatus.WAITING_ASSIGNMENT,
+      DeliveryStatus.ASSIGNED,
+      DeliveryStatus.LOADING,
+    };
     final snap = await _orders.where('tripId', isEqualTo: t.id).get();
     final batch = _db.batch();
     for (final d in snap.docs) {
+      final o = Order.fromMap(d.id, d.data());
+      if (!toDepart.contains(o.deliveryStatus)) continue; // giữ nguyên đơn khác
       batch.update(d.reference, {
         'deliveryStatus': DeliveryStatus.ON_THE_WAY.name,
         'timeline': FieldValue.arrayUnion([
@@ -697,7 +776,9 @@ class Db {
     }
     await batch.commit();
     await _notify(
-        title: 'Chuyến ${t.code} đã xuất phát',
+        title: wasInProgress
+            ? 'Chuyến ${t.code} có đơn mới đang giao'
+            : 'Chuyến ${t.code} đã xuất phát',
         body: 'Tài xế ${t.driverName}',
         refType: NotifRefType.trip,
         refId: t.id,
@@ -752,7 +833,7 @@ class Db {
         body: order.customerName,
         refType: NotifRefType.order,
         refId: order.id,
-        roles: {UserRole.owner},
+        roles: {UserRole.owner, UserRole.checker},
         icon: 'success');
   }
 

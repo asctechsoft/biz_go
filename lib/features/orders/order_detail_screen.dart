@@ -69,6 +69,20 @@ class OrderDetailScreen extends StatelessWidget {
                     KVRow('Địa chỉ giao', o.deliveryAddress),
                     if (o.deliveryNote.isNotEmpty)
                       KVRow('Ghi chú giao', o.deliveryNote),
+                    if (o.deliveryMapUrl.isNotEmpty ||
+                        o.deliveryAddress.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => openMap(context,
+                              mapUrl: o.deliveryMapUrl,
+                              address: o.deliveryAddress),
+                          icon: const Icon(Icons.navigation_outlined),
+                          label: const Text('Mở chỉ đường'),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -135,10 +149,13 @@ Future<String?> _askReason(BuildContext context, String title) async {
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(title),
-      content: TextField(
-          controller: c,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Nhập lý do')),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: TextField(
+            controller: c,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Nhập lý do')),
+      ),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
@@ -337,10 +354,18 @@ class _ActionBar extends StatelessWidget {
       }
     }
 
-    // Thu công nợ còn lại — Chủ / Giao hàng.
+    // Thu công nợ còn lại — Chủ / Kiểm hàng / Giao hàng.
+    // KHÔNG thu khi: đang ở điểm giao (ARRIVED), đơn đã hủy, hoặc giao
+    // không thành công (FAILED/RETURNED — hàng hoàn, khách chưa nhận).
+    const noCollect = {
+      DeliveryStatus.FAILED,
+      DeliveryStatus.RETURNED,
+      DeliveryStatus.ARRIVED,
+    };
     if (Perm.collectPayment(role) &&
         o.remaining > 0 &&
-        o.deliveryStatus != DeliveryStatus.ARRIVED) {
+        o.orderStatus != OrderStatus.CANCELLED &&
+        !noCollect.contains(o.deliveryStatus)) {
       add('Thu tiền', () => _collectFlow(context, db, o, user.id, user.name),
           primary: o.warehouseStatus == WarehouseStatus.WAITING ? false : true);
     }
@@ -369,7 +394,9 @@ class _ActionBar extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Đóng hàng xong'),
-        content: Column(
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
@@ -386,6 +413,7 @@ class _ActionBar extends StatelessWidget {
                 controller: noteC,
                 decoration: const InputDecoration(labelText: 'Ghi chú')),
           ],
+          ),
         ),
         actions: [
           TextButton(
@@ -419,7 +447,10 @@ class _ActionBar extends StatelessWidget {
       actorName: uname,
       note: result.note,
     );
-    if (context.mounted) toast(context, 'Đã giao thành công');
+    if (context.mounted) {
+      toast(context, 'Đã giao thành công');
+      Navigator.pop(context); // quay lại màn trước (chi tiết chuyến)
+    }
   }
 
   Future<void> _collectFlow(BuildContext context, Db db, Order o, String uid,
