@@ -29,7 +29,7 @@ class NotificationsScreen extends StatelessWidget {
       case NotifRefType.order:
         c.push('/orders/${n.refId}');
       case NotifRefType.trip:
-        c.push('/trips/${n.refId}');
+        break; // legacy — chuyến xe đã bỏ, không còn màn để mở
       case NotifRefType.customer:
       case NotifRefType.debt:
         c.push('/customers/${n.refId}');

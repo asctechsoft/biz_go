@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
+import '../../core/error_text.dart';
 import '../../core/permissions.dart';
 import '../../core/theme.dart';
 import '../../providers/auth_provider.dart';
@@ -119,11 +120,11 @@ class MoreScreen extends StatelessWidget {
               'Kho & đóng hàng',
               '/warehouse',
             ),
-          if (role != null && Perm.dispatchOps(role))
+          if (role != null && Perm.startDelivery(role))
             _tile(
               context,
               Icons.local_shipping_outlined,
-              'Chuyến xe',
+              'Giao hàng',
               '/delivery',
             ),
           if (role != null && Perm.manageUsers(role))
@@ -133,15 +134,15 @@ class MoreScreen extends StatelessWidget {
               'Quản lý người dùng',
               '/users',
             ),
-          if (role != null && Perm.manageFleet(role))
-            _tile(
-              context,
-              Icons.directions_car_outlined,
-              'Quản lý xe',
-              '/fleet',
-            ),
           if (role != null && Perm.viewReports(role))
             _tile(context, Icons.bar_chart, 'Báo cáo', '/reports'),
+          if (role != null && Perm.owner(role))
+            _tile(
+              context,
+              Icons.receipt_long_outlined,
+              'Cài đặt phiếu',
+              '/invoice-settings',
+            ),
           if (role != null && Perm.viewAudit(role))
             _tile(context, Icons.history, 'Nhật ký hệ thống', '/audit'),
           const Divider(),
@@ -161,7 +162,7 @@ class MoreScreen extends StatelessWidget {
                 style: TextStyle(color: AppColors.danger),
               ),
               subtitle: const Text(
-                  'Đơn, khách, sản phẩm, chuyến, công nợ, người dùng...'),
+                  'Đơn, khách, sản phẩm, công nợ, người dùng...'),
               onTap: () => _clearData(context),
             ),
           ListTile(
@@ -269,7 +270,7 @@ class MoreScreen extends StatelessWidget {
       context,
       title: 'Xóa toàn bộ dữ liệu',
       message:
-          'Xóa TẤT CẢ đơn hàng, khách, sản phẩm, chuyến, công nợ, nhật ký VÀ '
+          'Xóa TẤT CẢ đơn hàng, khách, sản phẩm, công nợ, nhật ký VÀ '
           'hồ sơ người dùng? KHÔNG THỂ hoàn tác. App sẽ đăng xuất, đăng nhập '
           'lại bằng tài khoản mặc định 0900000000 / 123456 rồi thiết lập lại.',
       confirm: 'Xóa hết',
@@ -301,7 +302,10 @@ class MoreScreen extends StatelessWidget {
       );
     } catch (e) {
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(SnackBar(content: Text('Lỗi xóa dữ liệu: $e')));
+      debugPrint('WIPE-DATA ERROR: $e');
+      messenger.showSnackBar(SnackBar(
+          content: Text(friendlyError(e,
+              fallback: 'Xoá dữ liệu không thành công. Thử lại giúp tôi.'))));
     }
   }
 

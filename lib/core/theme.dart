@@ -48,6 +48,19 @@ class AppTheme {
           side: const BorderSide(color: AppColors.border),
         ),
         margin: EdgeInsets.zero,
+        // Card bo góc 14 nhưng mặc định KHÔNG cắt nội dung, nên hiệu ứng chạm
+        // của ListTile bên trong vẽ theo hình chữ nhật và đè ra 4 góc bo.
+        clipBehavior: Clip.antiAlias,
+      ),
+      // Bo góc trên + CẮT nội dung theo đúng khung đó. Thiếu `clipBehavior`
+      // thì hiệu ứng chạm của ListTile vẽ theo hình chữ nhật, tràn ra ngoài
+      // hai góc bo — nhìn như bấm lem ra mép sheet.
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Colors.white,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
       ),
       dialogTheme: DialogThemeData(
         insetPadding: const EdgeInsets.all(16), // cách mép màn hình 16px

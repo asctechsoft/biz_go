@@ -2,11 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/demo_accounts.dart';
 import '../models/customer.dart';
-import '../models/fleet.dart';
 import '../models/product.dart';
 import 'auth_service.dart';
 
-/// Seeds demo catalog/customers/fleet + a demo admin account so the app is
+/// Seeds demo catalog/customers + a demo admin account so the app is
 /// usable immediately. Idempotent via meta/seeded flag.
 class SeedService {
   final _db = FirebaseFirestore.instance;
@@ -147,22 +146,6 @@ class SeedService {
     for (final c in customers) {
       await _db.collection('customers').add(c.toMap());
     }
-
-    // Vehicles + drivers
-    final v1 = await _db.collection('vehicles').add(Vehicle(
-            id: '', plate: '29C-12345', type: 'Tải 1.25T', capacityKg: 1250)
-        .toMap());
-    await _db.collection('vehicles').add(
-        Vehicle(id: '', plate: '29H-67890', type: 'Van', capacityKg: 800).toMap());
-    await _db.collection('drivers').add(Driver(
-            id: '',
-            name: 'Nguyễn Văn A',
-            phone: '0988555666',
-            defaultVehicleId: v1.id)
-        .toMap());
-    await _db
-        .collection('drivers')
-        .add(Driver(id: '', name: 'Trần Văn B', phone: '0977111222').toMap());
 
     await _db.collection('meta').doc('seeded').set({'done': true});
   }

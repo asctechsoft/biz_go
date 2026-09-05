@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../core/error_text.dart';
 import '../models/app_user.dart';
 import '../services/auth_service.dart';
 import '../services/push_service.dart';
@@ -110,55 +111,31 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _friendlyChange(Object e) {
-    final s = e.toString();
-    if (s.contains('email-already-in-use')) {
-      return 'Số điện thoại này đã có tài khoản khác dùng. Chọn số khác.';
-    }
-    if (s.contains('weak-password')) {
-      return 'Mật khẩu quá yếu (tối thiểu 6 ký tự).';
-    }
-    if (s.contains('invalid-credential') ||
-        s.contains('wrong-password') ||
-        s.contains('invalid-login-credentials')) {
-      return 'Mật khẩu hiện tại không đúng.';
-    }
-    if (s.contains('requires-recent-login')) {
-      return 'Phiên đăng nhập đã cũ. Đăng xuất rồi đăng nhập lại để đổi.';
-    }
-    if (s.contains('network')) return 'Lỗi kết nối mạng.';
-    final code = RegExp(r'\[([^\]]+)\]').firstMatch(s)?.group(1);
-    return 'Thiết lập thất bại${code == null ? '' : ': $code'}';
-  }
+  /// Ở màn đổi thông tin đăng nhập, "sai thông tin" nghĩa là **mật khẩu hiện
+  /// tại** sai — khác nghĩa với lúc đăng nhập.
+  String _friendlyChange(Object e) => friendlyError(
+        e,
+        fallback: 'Thiết lập không thành công. Thử lại giúp tôi.',
+        overrides: const {
+          'invalid-credential': 'Mật khẩu hiện tại không đúng.',
+          'invalid-login-credentials': 'Mật khẩu hiện tại không đúng.',
+          'wrong-password': 'Mật khẩu hiện tại không đúng.',
+          'email-already-in-use':
+              'Số điện thoại này đã có tài khoản khác dùng. Chọn số khác.',
+          'requires-recent-login':
+              'Phiên đăng nhập đã cũ. Đăng xuất rồi đăng nhập lại để đổi.',
+        },
+      );
 
-  String _friendly(Object e) {
-    final s = e.toString();
-    if (s.contains('account-removed')) {
-      return 'Tài khoản này đã bị xoá. Liên hệ Chủ để được cấp lại.';
-    }
-    if (s.contains('account-disabled')) {
-      return 'Tài khoản đang bị tạm ngưng. Liên hệ Chủ để mở lại.';
-    }
-    if (s.contains('owner-already-exists')) {
-      return 'Tài khoản demo đã bị vô hiệu hoá vì hệ thống đã có Chủ.\n'
-          'Đăng nhập bằng số điện thoại Chủ đã thiết lập.';
-    }
-    if (s.contains('invalid-credential') ||
-        s.contains('wrong-password') ||
-        s.contains('user-not-found') ||
-        s.contains('invalid-login-credentials')) {
-      return 'Số điện thoại hoặc mật khẩu không đúng.\nLần đầu bấm "Tạo dữ liệu mẫu & đăng nhập demo".';
-    }
-    if (s.contains('operation-not-allowed')) {
-      return 'Firebase chưa bật đăng nhập Email/Password. Vào Console → Authentication → Sign-in method để bật.';
-    }
-    if (s.contains('too-many-requests')) {
-      return 'Thử quá nhiều lần. Đợi chút rồi thử lại.';
-    }
-    if (s.contains('network')) return 'Lỗi kết nối mạng.';
-    // Surface the raw Firebase code so lỗi lạ vẫn chẩn đoán được.
-    final code = RegExp(r'\[([^\]]+)\]').firstMatch(s)?.group(1) ??
-        RegExp(r'\(([^)]+)\)').firstMatch(s)?.group(1);
-    return 'Đăng nhập thất bại${code == null ? '' : ': $code'}';
-  }
+  String _friendly(Object e) => friendlyError(
+        e,
+        fallback: 'Đăng nhập không thành công. Thử lại giúp tôi.',
+        overrides: const {
+          'invalid-credential': 'Số điện thoại hoặc mật khẩu không đúng.',
+          'invalid-login-credentials':
+              'Số điện thoại hoặc mật khẩu không đúng.',
+          'wrong-password': 'Số điện thoại hoặc mật khẩu không đúng.',
+          'user-not-found': 'Số điện thoại hoặc mật khẩu không đúng.',
+        },
+      );
 }

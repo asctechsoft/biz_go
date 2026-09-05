@@ -349,13 +349,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(
-                'Chọn danh mục',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-            ),
+            const SheetHeader('Chọn danh mục'),
             for (final c in cats)
               ListTile(
                 leading: const Icon(

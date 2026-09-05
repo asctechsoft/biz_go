@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/auth_service.dart';
 import '../../services/biometric_service.dart';
 import '../../services/seed_service.dart';
 import '../../widgets/common.dart';
@@ -44,6 +45,16 @@ class _LoginScreenState extends State<LoginScreen> {
     final auth = context.read<AuthProvider>();
     final phone = _phone.text.trim();
     final pass = _pass.text;
+    // Chặn tại chỗ: SĐT rỗng/không có chữ số → email dựng ra là "@bizgo.local",
+    // Firebase trả `invalid-email` — lỗi vô nghĩa với người dùng.
+    if (AuthService.normalizePhone(phone).isEmpty) {
+      toast(context, 'Nhập số điện thoại đăng nhập.');
+      return;
+    }
+    if (pass.isEmpty) {
+      toast(context, 'Nhập mật khẩu.');
+      return;
+    }
     final ok = await auth.signIn(phone, pass);
     if (ok) {
       // Lưu để đăng nhập vân tay lần sau (đúng tài khoản này).

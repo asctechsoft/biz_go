@@ -416,13 +416,7 @@ class ProductDetailScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(
-                'Chọn danh mục',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-            ),
+            const SheetHeader('Chọn danh mục'),
             for (final c in cats)
               ListTile(
                 leading: const Icon(
@@ -762,13 +756,7 @@ class _PackagingScreen extends StatelessWidget {
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Text(
-                    'Chọn đơn vị',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                  ),
-                ),
+                const SheetHeader('Chọn đơn vị'),
                 for (final u in units)
                   ListTile(
                     leading: const Icon(

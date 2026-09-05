@@ -1,7 +1,7 @@
 # BizGo
 
 Ứng dụng mobile **quản lý bán hàng – giao hàng – công nợ** cho xưởng sản xuất/bán lẻ (khoai lang, ngô chiên…).
-Flutter + Firebase. Một đơn hàng có đầy đủ vòng đời: **tạo đơn → kho chuẩn bị → đóng hàng → xếp chuyến → giao → thu tiền → công nợ → báo cáo**.
+Flutter + Firebase. Một đơn hàng có đầy đủ vòng đời: **tạo đơn → kho chuẩn bị → đóng hàng → xuất phát → giao → thu tiền → công nợ → báo cáo**.
 
 > Tài liệu nghiệp vụ gốc: `Dac_ta_nghiep_vu_App_Ban_Hang_Giao_Hang_Mobile.docx`.
 
@@ -79,26 +79,30 @@ dart run flutter_launcher_icons   # đọc assets/images/logo_app.png
 
 ---
 
-## 5. Tài khoản demo
+## 5. Đăng nhập lần đầu
 
-Lần đầu ở màn login bấm nút vàng **"Tạo dữ liệu mẫu & đăng nhập demo"** → seed dữ liệu + tạo cả 3 tài khoản.
-Mật khẩu chung: `123456`.
+Chỉ có **một** tài khoản bootstrap: `0900000000` / `123456` (điền sẵn ở màn login). Đăng nhập lần đầu app khoá ở màn **Thiết lập tài khoản** — bắt đổi SĐT đăng nhập + mật khẩu mới cho vào. Các tài khoản khác do Chủ tự tạo sau.
 
 | SĐT | Vai trò | Thấy gì |
 |-----|---------|---------|
-| `0900000000` | **Chủ** (owner) | tất cả: đơn, khách, sản phẩm, báo cáo, quản lý người dùng, xe, nhật ký |
-| `0900000001` | **Kiểm hàng** (checker) | đơn, kho, đóng hàng, in phiếu |
-| `0900000002` | **Giao hàng** (shipper) | chỉ chuyến được phân công, giao đơn, thu COD |
+| `0900000000` | **Chủ** (owner) | tất cả: đơn, khách, sản phẩm, giao hàng, thu tiền, báo cáo, quản lý người dùng, nhật ký |
 
-> Đăng nhập cũng **tự tạo** tài khoản demo nếu chưa có (miễn mật khẩu `123456`).
+> Số bootstrap chỉ "mọc" ra Chủ khi `users` **chưa có Chủ nào** — không phải cửa hậu.
 
 ---
 
 ## 6. Phân quyền (RBAC) — 3 vai trò
 
-- **Chỉ 1 tài khoản Chủ.** Chủ vào **Cài đặt → Quản lý người dùng** tạo tài khoản Kiểm hàng / Giao hàng; họ tự đăng nhập.
+| Vai trò | Làm được |
+|---------|----------|
+| **Chủ** (owner) | toàn quyền. Người **duy nhất** đối soát giao hàng + thu tiền |
+| **Kiểm hàng** (checker) | kho/đóng hàng/in phiếu, xem đơn, bấm **Xuất phát** |
+| **Kiểm kho** (warehouse) | chỉ thao tác kho + xem đơn |
+
+- **Có thể có nhiều Chủ** (2 người đồng sở hữu cùng quản 1 cửa hàng), nhưng hệ thống luôn giữ **ít nhất 1 Chủ** — không cho xoá/hạ cấp/khoá người cuối cùng. Chủ vào **Cài đặt → Quản lý người dùng** tạo tài khoản Chủ / Kiểm hàng / Kiểm kho; họ tự đăng nhập.
+- ⚠️ **Nhiều Chủ KHÔNG phải để tách 2 cơ sở.** App là single-tenant: một Firebase project = một cửa hàng, mọi Chủ nhìn chung một kho dữ liệu (đơn, khách, giá, công nợ, doanh thu). Bán cho 2 cơ sở khác nhau thì phải dựng **2 Firebase project riêng**.
 - Tạo tài khoản dùng **FirebaseApp phụ** nên Chủ **không bị đăng xuất** (không cần server).
-- **Tài xế = tài khoản Giao hàng.** Điều phối tạo chuyến chọn tài xế từ danh sách tài khoản Giao hàng; `trip.driverId = uid`. Tài xế login chỉ thấy **chuyến của mình**.
+- **KHÔNG có vai trò tài xế.** Kho đóng hàng xong bấm Xuất phát (từng đơn hoặc cả lô), cuối ngày Chủ vào tab **Giao hàng** tick đơn nào giao thành công + thu tiền.
 
 Chặn ở 3 tầng: tab (bottom nav) · nút hành động · route guard. Xem `lib/core/permissions.dart`.
 
@@ -125,7 +129,7 @@ App phải lưu FCM token (`lib/services/push_service.dart` — tự chạy khi 
 ```
 lib/
 ├── core/            enums (bộ trạng thái), theme, router, permissions, formatters, demo_accounts
-├── models/          order, customer, product, payment, fleet, app_user, app_notification, audit_log
+├── models/          order, order_filter, customer, product, payment, shop_info, app_user, app_notification, audit_log
 ├── providers/       auth_provider
 ├── services/        db (Firestore gateway), auth_service, seed_service, image_service, push_service
 ├── features/
@@ -135,9 +139,9 @@ lib/
 │   ├── orders/      danh sách, tạo đơn, chi tiết, hoá đơn, thu tiền
 │   ├── customers/   khách, địa chỉ, công nợ
 │   ├── products/    sản phẩm, phân loại, quy cách/giá, lịch sử giá
-│   ├── warehouse/   kho & đóng hàng
-│   ├── delivery/    chuyến xe, tạo chuyến, chi tiết chuyến
-│   ├── fleet/       quản lý xe
+│   ├── warehouse/   kho & đóng hàng (tab "Chờ xuất phát" có nút cho đơn đi)
+│   ├── delivery/    giao hàng: chờ xuất phát / đang giao / xong hôm nay
+│   │                + delivery_actions.dart (thao tác dùng chung)
 │   └── more/        cài đặt, báo cáo, quản lý người dùng, nhật ký hệ thống
 ├── shell/           main_shell (bottom nav theo vai trò)
 └── widgets/         common (StatusChip, SectionCard, KVRow, pickImage…)
@@ -156,6 +160,6 @@ noti-server/         worker Node.js gửi push FCM theo vai trò
 
 ## 10. MVP đã có
 
-Đăng nhập/phân quyền · sản phẩm/giá/lịch sử giá · khách/nhiều địa chỉ/công nợ · tạo đơn (snapshot giá + địa chỉ) · in hoá đơn · kho/đóng hàng · chuyến xe/tài xế · giao hàng/thu COD · thu công nợ (FIFO nhiều đơn) · hủy đơn (hoàn tiền, đối trừ) · timeline · notification theo vai trò + push · dashboard/báo cáo · audit log · quản lý người dùng · xóa toàn bộ dữ liệu.
+Đăng nhập/phân quyền · sản phẩm/giá/lịch sử giá · khách/nhiều địa chỉ/công nợ · tạo đơn (snapshot giá + địa chỉ) · in hoá đơn (preview + PDF) · kho/đóng hàng (mã kiện tự sinh) · xuất phát từng đơn hoặc cả lô · đối soát cuối ngày/thu COD · thu công nợ (FIFO nhiều đơn) · hủy đơn (hoàn tiền, đối trừ) · timeline · notification theo vai trò + push · dashboard/báo cáo · audit log · quản lý người dùng · xóa toàn bộ dữ liệu.
 
 **Chưa làm:** in Bluetooth thật (mới preview hoá đơn), deep-link khi bấm push, iOS APNs.

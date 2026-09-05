@@ -4,11 +4,14 @@ import 'theme.dart';
 /// All status sets from spec §18. Stored in Firestore as the enum `name`.
 
 /// 3 vai trò (§3 rút gọn theo mô hình vận hành thực tế).
+///
+/// KHÔNG còn vai trò `shipper` (Giao hàng): khách không có công đoạn tài xế
+/// nhận chuyến. Kho đóng hàng xong bấm "Xuất phát", cuối ngày Chủ đối soát
+/// đơn nào giao thành công + thu tiền.
 enum UserRole {
-  owner, // Chủ — toàn quyền: tạo đơn, giá, khách, báo cáo, quản lý
-  checker, // Kiểm hàng — chuẩn bị, đóng hàng, in phiếu
+  owner, // Chủ — toàn quyền: tạo đơn, giá, khách, báo cáo, đối soát giao hàng
+  checker, // Kiểm hàng — chuẩn bị, đóng hàng, in phiếu, cho đơn xuất phát
   warehouse, // Kiểm kho — thao tác kho, xem đơn
-  shipper, // Giao hàng — nhận chuyến, giao đơn, thu tiền COD
 }
 
 extension UserRoleX on UserRole {
@@ -16,13 +19,14 @@ extension UserRoleX on UserRole {
     UserRole.owner => 'Chủ',
     UserRole.checker => 'Kiểm hàng',
     UserRole.warehouse => 'Kiểm kho',
-    UserRole.shipper => 'Giao hàng',
   };
 }
 
+/// Hồ sơ cũ còn `role: 'shipper'` (vai trò đã bỏ) rơi về [UserRole.warehouse]
+/// — quyền thấp nhất, đúng nguyên tắc fallback an toàn.
 UserRole roleFromName(String? n) => UserRole.values.firstWhere(
   (e) => e.name == n,
-  orElse: () => UserRole.shipper,
+  orElse: () => UserRole.warehouse,
 );
 
 // §18.1 Order Status
@@ -32,6 +36,11 @@ enum OrderStatus { NEW, CONFIRMED, PROCESSING, COMPLETED, CANCELLED }
 enum WarehouseStatus { WAITING, PREPARING, PREPARED, PACKING, PACKED }
 
 // §18.3 Delivery Status
+//
+// Luồng hiện tại chỉ dùng: WAITING_ASSIGNMENT (đóng hàng xong, chờ xuất phát)
+// → ON_THE_WAY (đã xuất phát) → DELIVERED / FAILED / RESCHEDULED / RETURNED.
+// ASSIGNED · LOADING · ARRIVED là **legacy** của luồng chuyến xe + tài xế đã
+// bỏ — giữ lại để đơn cũ trong Firestore vẫn đọc/hiển thị đúng, KHÔNG ghi mới.
 enum DeliveryStatus {
   WAITING_ASSIGNMENT,
   ASSIGNED,
@@ -44,11 +53,19 @@ enum DeliveryStatus {
   RETURNED,
 }
 
+/// Trạng thái giao hàng còn dùng — đổ vào ô lọc để người dùng không phải chọn
+/// giữa mấy trạng thái chết của luồng chuyến xe cũ.
+const deliveryStatusFilterValues = [
+  DeliveryStatus.WAITING_ASSIGNMENT,
+  DeliveryStatus.ON_THE_WAY,
+  DeliveryStatus.DELIVERED,
+  DeliveryStatus.FAILED,
+  DeliveryStatus.RESCHEDULED,
+  DeliveryStatus.RETURNED,
+];
+
 // §18.4 Payment Status
 enum PaymentStatus { UNPAID, PARTIAL, PAID, REFUNDED, COD, DEBT }
-
-// §18.5 Trip Status
-enum TripStatus { DRAFT, READY, IN_PROGRESS, COMPLETED, CANCELLED }
 
 enum PaymentMethod { cash, transfer, ewallet }
 
@@ -91,10 +108,11 @@ StatusUi warehouseStatusUi(WarehouseStatus s) => switch (s) {
 
 StatusUi deliveryStatusUi(DeliveryStatus s) => switch (s) {
   DeliveryStatus.WAITING_ASSIGNMENT => const StatusUi(
-    'Chờ xếp chuyến',
+    'Chờ xuất phát',
     AppColors.textSecondary,
   ),
-  DeliveryStatus.ASSIGNED => const StatusUi('Đã xếp chuyến', AppColors.info),
+  // legacy — luồng chuyến xe cũ
+  DeliveryStatus.ASSIGNED => const StatusUi('Chờ xuất phát', AppColors.info),
   DeliveryStatus.LOADING => const StatusUi('Đang lên xe', AppColors.warning),
   DeliveryStatus.ON_THE_WAY => const StatusUi('Đang giao', AppColors.info),
   DeliveryStatus.ARRIVED => const StatusUi('Đã tới', AppColors.warning),
@@ -120,14 +138,6 @@ StatusUi paymentStatusUi(PaymentStatus s) => switch (s) {
   ),
   PaymentStatus.COD => const StatusUi('Thu khi giao', AppColors.info),
   PaymentStatus.DEBT => const StatusUi('Công nợ', AppColors.danger),
-};
-
-StatusUi tripStatusUi(TripStatus s) => switch (s) {
-  TripStatus.DRAFT => const StatusUi('Nháp', AppColors.textSecondary),
-  TripStatus.READY => const StatusUi('Chờ xuất phát', AppColors.warning),
-  TripStatus.IN_PROGRESS => const StatusUi('Đang giao', AppColors.success),
-  TripStatus.COMPLETED => const StatusUi('Đã giao', AppColors.textSecondary),
-  TripStatus.CANCELLED => const StatusUi('Đã hủy', AppColors.danger),
 };
 
 T enumFromName<T extends Enum>(List<T> values, String? name, T fallback) =>

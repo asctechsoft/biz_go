@@ -3,6 +3,7 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
+import '../../core/error_text.dart';
 import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../models/app_user.dart';
@@ -11,15 +12,22 @@ import '../../services/auth_service.dart';
 import '../../services/db.dart';
 import '../../widgets/common.dart';
 
-/// §3 — Chủ tạo & quản lý tài khoản nhân viên (Kiểm hàng) và tài xế (Giao hàng).
+/// §3 — Chủ tạo & quản lý tài khoản nhân viên, kể cả **Chủ thứ hai**.
+///
+/// Nhiều Chủ = nhiều người cùng quản **một** cửa hàng, dùng chung toàn bộ dữ
+/// liệu (đơn, khách, công nợ, báo cáo). KHÔNG phải để tách 2 cơ sở — một
+/// Firestore là một cửa hàng.
+///
+/// Ràng buộc duy nhất: luôn phải còn **ít nhất 1 Chủ** đang hoạt động, không
+/// thì chẳng ai vào được màn này để dựng lại. `Db` chặn thật, UI chỉ ẩn nút
+/// cho đỡ bấm nhầm.
 class UserManagementScreen extends StatelessWidget {
   const UserManagementScreen({super.key});
 
-  // Chủ chỉ tạo được 2 vai trò này; tài khoản Chủ giữ duy nhất.
   static const _creatableRoles = [
+    UserRole.owner,
     UserRole.checker,
     UserRole.warehouse,
-    UserRole.shipper,
   ];
 
   @override
@@ -35,6 +43,8 @@ class UserManagementScreen extends StatelessWidget {
           }
           final users = snap.data!;
           final meId = context.read<AuthProvider>().user?.id;
+          final ownerCount =
+              users.where((u) => u.role == UserRole.owner).length;
           return SlidableAutoCloseBehavior(
             child: ListView.separated(
               padding: const EdgeInsets.all(12),
@@ -42,16 +52,19 @@ class UserManagementScreen extends StatelessWidget {
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, i) {
                 final u = users[i];
-                // Không cho xoá Chủ (chỉ có 1, xoá là mất quyền quản trị) và
-                // không cho tự xoá chính mình.
-                final canDelete = u.role != UserRole.owner && u.id != meId;
+                final isOwner = u.role == UserRole.owner;
+                // Chủ cuối cùng thì khoá mọi thao tác hạ quyền; có Chủ khác
+                // gánh thì xoá/khoá được. Không bao giờ tự xoá chính mình.
+                final lastOwner = isOwner && ownerCount <= 1;
+                final canDelete = !lastOwner && u.id != meId;
+                final lockSwitch = isOwner && (lastOwner || u.id == meId);
                 final tile = ListTile(
-                  onTap: () => _editUser(context, u),
+                  onTap: () => _editUser(context, u, ownerCount: ownerCount),
                   leading: Avatar(u.name, size: 42),
                   title: Text(u.name,
                       style: const TextStyle(fontWeight: FontWeight.w700)),
                   subtitle: Text('${u.role.label} · ${u.phone}'),
-                  trailing: u.role == UserRole.owner
+                  trailing: lockSwitch
                       ? const Chip(
                           label: Text('Chủ',
                               style: TextStyle(
@@ -61,7 +74,7 @@ class UserManagementScreen extends StatelessWidget {
                         )
                       : Switch(
                           value: u.active,
-                          onChanged: (v) => db.setUserActive(u.id, v),
+                          onChanged: (v) => _setActive(context, db, u, v),
                         ),
                 );
                 if (!canDelete) return Card(child: tile);
@@ -113,7 +126,15 @@ class UserManagementScreen extends StatelessWidget {
 
   /// Xoá tài khoản (swipe sang trái). Chỉ xoá hồ sơ Firestore — tài khoản
   /// Firebase Auth cần Admin SDK mới xoá được, nên SĐT đó không tạo lại được.
-  Future<void> _deleteUser(BuildContext context, Db db, AppUser u) async {
+  ///
+  /// [slideCtx] là context của `SlidableAction`, nằm TRONG action pane — pane
+  /// đóng lại là widget đó bị gỡ khỏi cây, `slideCtx.mounted` thành false và
+  /// mọi lệnh sau `await` bị bỏ qua. Màn này là `StatelessWidget` nên không có
+  /// context của State để thay: giữ sẵn `ScaffoldMessenger` trước khi await.
+  Future<void> _deleteUser(BuildContext slideCtx, Db db, AppUser u) async {
+    final context = slideCtx;
+    final messenger = ScaffoldMessenger.of(context);
+    Slidable.of(context)?.close();
     final me = context.read<AuthProvider>().user;
     final ok = await confirmDialog(
       context,
@@ -123,30 +144,51 @@ class UserManagementScreen extends StatelessWidget {
       confirm: 'Xóa',
     );
     if (!ok) return;
-    if (context.mounted) toast(context, 'Đã xóa tài khoản ${u.name}');
-    // Co hàng lại (đẩy các dòng dưới lên) rồi mới xóa dữ liệu.
-    final slidable = context.mounted ? Slidable.of(context) : null;
-    void remove() => db.deleteUser(
-          u.id,
-          actorId: me?.id ?? '',
-          actorName: me?.name ?? '',
-        );
-    if (slidable != null) {
-      slidable.dismiss(
-        ResizeRequest(const Duration(milliseconds: 300), remove),
+
+    void say(String msg) => messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(msg)));
+
+    // Xoá thẳng, danh sách chạy bằng stream nên hàng tự biến mất. Không treo
+    // lệnh xoá vào `Slidable.dismiss(ResizeRequest(...))`: callback đó chỉ chạy
+    // khi animation ở đúng trạng thái `completed` (dismissal.dart:61).
+    try {
+      await db.deleteUser(
+        u.id,
+        actorId: me?.id ?? '',
+        actorName: me?.name ?? '',
       );
-    } else {
-      remove();
+      say('Đã xóa tài khoản ${u.name}');
+    } catch (e) {
+      debugPrint('DELETE-USER ERROR: $e');
+      say(friendlyError(e,
+          fallback: 'Xoá tài khoản không thành công. Thử lại giúp tôi.'));
     }
   }
 
-  /// Sửa hồ sơ user: tên (mọi vai trò) + vai trò (trừ Chủ). SĐT giữ nguyên.
-  Future<void> _editUser(BuildContext context, AppUser u) async {
+  /// Bật/tắt tài khoản. `Db` từ chối khi khoá Chủ đang hoạt động cuối cùng.
+  Future<void> _setActive(
+      BuildContext context, Db db, AppUser u, bool active) async {
+    try {
+      await db.setUserActive(u.id, active);
+    } catch (e) {
+      debugPrint('SET-USER-ACTIVE ERROR: $e');
+      if (context.mounted) {
+        toast(context,
+            friendlyError(e, fallback: 'Không đổi được trạng thái tài khoản.'));
+      }
+    }
+  }
+
+  /// Sửa hồ sơ user: tên (mọi vai trò) + vai trò. SĐT giữ nguyên.
+  /// Chủ **cuối cùng** không cho đổi vai trò — hạ cấp là mất quyền quản trị.
+  Future<void> _editUser(BuildContext context, AppUser u,
+      {required int ownerCount}) async {
     final db = context.read<Db>();
     final auth = context.read<AuthProvider>();
     final nameC = TextEditingController(text: u.name);
     UserRole role = u.role;
-    final isOwner = u.role == UserRole.owner;
+    final lockRole = u.role == UserRole.owner && ownerCount <= 1;
 
     await showModalBottomSheet(
       context: context,
@@ -180,7 +222,15 @@ class UserManagementScreen extends StatelessWidget {
                   decoration: const InputDecoration(
                       labelText: 'Số điện thoại (không đổi được)'),
                 ),
-                if (!isOwner) ...[
+                if (lockRole) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Đây là tài khoản Chủ duy nhất nên không đổi được vai trò. '
+                    'Tạo thêm một Chủ nữa rồi hãy đổi.',
+                    style:
+                        TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                  ),
+                ] else ...[
                   const SizedBox(height: 12),
                   const Text('Vai trò',
                       style: TextStyle(
@@ -205,11 +255,22 @@ class UserManagementScreen extends StatelessWidget {
                       toast(ctx, 'Vui lòng nhập họ tên');
                       return;
                     }
-                    await db.updateUser(
-                      u.id,
-                      name: nameC.text.trim(),
-                      role: isOwner ? null : role,
-                    );
+                    try {
+                      await db.updateUser(
+                        u.id,
+                        name: nameC.text.trim(),
+                        role: lockRole ? null : role,
+                      );
+                    } catch (e) {
+                      debugPrint('UPDATE-USER ERROR: $e');
+                      if (ctx.mounted) {
+                        toast(
+                            ctx,
+                            friendlyError(e,
+                                fallback: 'Không cập nhật được người dùng.'));
+                      }
+                      return;
+                    }
                     if (u.id == auth.user?.id) await auth.refreshProfile();
                     if (ctx.mounted) Navigator.pop(ctx);
                     if (context.mounted) {
@@ -231,7 +292,7 @@ class UserManagementScreen extends StatelessWidget {
     final nameC = TextEditingController();
     final phoneC = TextEditingController();
     final passC = TextEditingController(text: '123456');
-    UserRole role = UserRole.shipper;
+    UserRole role = UserRole.checker;
     String? error;
     bool busy = false;
     final auth = AuthService();
@@ -320,6 +381,26 @@ class UserManagementScreen extends StatelessWidget {
                       ),
                   ],
                 ),
+                // Chủ là quyền cao nhất — nói rõ trước khi bấm, vì SĐT đã tạo
+                // thì KHÔNG xoá lại được (Firebase Auth cần Admin SDK).
+                if (role == UserRole.owner) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Text(
+                      'Chủ có TOÀN QUYỀN: xem doanh thu, công nợ, thu tiền, '
+                      'sửa giá và quản lý cả tài khoản khác. Chỉ tạo cho '
+                      'người đồng sở hữu cửa hàng này.',
+                      style: TextStyle(fontSize: 12.5, height: 1.35),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 ElevatedButton(
                   onPressed: busy
@@ -354,9 +435,14 @@ class UserManagementScreen extends StatelessWidget {
                                   'Đã tạo tài khoản ${nameC.text.trim()}');
                             }
                           } catch (e) {
-                            final msg = e.toString().contains('email-already-in-use')
-                                ? 'Số điện thoại này đã có tài khoản'
-                                : 'Lỗi tạo tài khoản: $e';
+                            debugPrint('CREATE-USER ERROR: $e');
+                            final msg = friendlyError(e,
+                                fallback:
+                                    'Tạo tài khoản không thành công. Thử lại giúp tôi.',
+                                overrides: const {
+                                  'email-already-in-use':
+                                      'Số điện thoại này đã có tài khoản',
+                                });
                             setSheet(() {
                               busy = false;
                               error = msg;

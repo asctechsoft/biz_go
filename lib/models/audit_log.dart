@@ -2,7 +2,7 @@
 class AuditLog {
   final String id;
   final String action; // create_order, record_payment, cancel_order, ...
-  final String entityType; // order / payment / packaging / trip
+  final String entityType; // order / payment / packaging / customer / user
   final String entityId;
   final String actorId;
   final String actorName;
@@ -38,11 +38,19 @@ class AuditLog {
         'cancel_order' => 'Hủy đơn',
         'warehouse_step' => 'Cập nhật kho',
         'pack_order' => 'Đóng hàng',
+        'depart_order' => 'Xuất phát',
         'deliver_order' => 'Giao hàng',
-        'delivery_failed' => 'Giao thất bại',
+        'delivery_failed' => 'Giao không thành công',
+        'mark_priority' => 'Đánh dấu GẤP',
+        'unmark_priority' => 'Bỏ đánh dấu GẤP',
+        'price_change' => 'Đổi giá',
+        // `Db.deleteUser`/`deleteCustomer` ghi action IN HOA — giữ nguyên chuỗi
+        // đã lưu trong Firestore, chỉ thêm nhãn cho khỏi hiện mã trần.
+        'DELETE_USER' => 'Xoá người dùng',
+        'DELETE_CUSTOMER' => 'Xoá khách hàng',
+        // legacy — phân hệ chuyến xe/tài xế đã bỏ, nhật ký cũ vẫn cần nhãn
         'depart_trip' => 'Xe xuất phát',
         'assign_trip' => 'Xếp chuyến',
-        'price_change' => 'Đổi giá',
         _ => action,
       };
 }

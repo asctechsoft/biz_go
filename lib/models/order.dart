@@ -127,8 +127,6 @@ class Order {
   final PaymentStatus paymentStatus;
 
   final int paidAmount; // tổng đã thu (từ payments)
-  final String? tripId;
-  final int sequence; // thứ tự giao trong chuyến
 
   final String note; // ghi chú nội bộ
   final String deliveryNote; // ghi chú giao hàng
@@ -146,6 +144,9 @@ class Order {
   /// đơn vị đã nhập (`kg` / `tạ` / `tấn`) — xem `fmtWeight()`.
   final double? weightKg;
   final String weightUnit;
+
+  /// Đơn gấp — Chủ tự đánh dấu, ghim lên đầu danh sách trong ngày.
+  final bool priority;
 
   final List<TimelineEvent> timeline;
 
@@ -170,8 +171,6 @@ class Order {
     this.deliveryStatus = DeliveryStatus.WAITING_ASSIGNMENT,
     this.paymentStatus = PaymentStatus.UNPAID,
     this.paidAmount = 0,
-    this.tripId,
-    this.sequence = 0,
     this.note = '',
     this.deliveryNote = '',
     this.cancelReason,
@@ -179,6 +178,7 @@ class Order {
     this.packageCount,
     this.weightKg,
     this.weightUnit = 'kg',
+    this.priority = false,
     this.timeline = const [],
   });
 
@@ -228,8 +228,6 @@ class Order {
       PaymentStatus.UNPAID,
     ),
     paidAmount: (m['paidAmount'] ?? 0) as int,
-    tripId: m['tripId'],
-    sequence: (m['sequence'] ?? 0) as int,
     note: m['note'] ?? '',
     deliveryNote: m['deliveryNote'] ?? '',
     cancelReason: m['cancelReason'],
@@ -237,6 +235,7 @@ class Order {
     packageCount: m['packageCount'],
     weightKg: (m['weightKg'] as num?)?.toDouble(),
     weightUnit: m['weightUnit'] ?? 'kg',
+    priority: m['priority'] == true,
     timeline: ((m['timeline'] as List?) ?? [])
         .map((e) => TimelineEvent.fromMap(Map<String, dynamic>.from(e)))
         .toList(),
@@ -265,8 +264,6 @@ class Order {
     'paymentStatus': paymentStatus.name,
     'paidAmount': paidAmount,
     'remaining': remaining,
-    'tripId': tripId,
-    'sequence': sequence,
     'note': note,
     'deliveryNote': deliveryNote,
     'cancelReason': cancelReason,
@@ -274,6 +271,7 @@ class Order {
     'packageCount': packageCount,
     'weightKg': weightKg,
     'weightUnit': weightUnit,
+    'priority': priority,
     'timeline': timeline.map((e) => e.toMap()).toList(),
   };
 }

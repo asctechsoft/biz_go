@@ -206,6 +206,37 @@ Future<void> openMap(
   }
 }
 
+/// Đầu bottom sheet: thanh kéo + tiêu đề CĂN GIỮA. Dùng chung cho mọi sheet
+/// để tiêu đề không chỗ trái chỗ giữa.
+class SheetHeader extends StatelessWidget {
+  final String title;
+  const SheetHeader(this.title, {super.key});
+
+  @override
+  Widget build(BuildContext context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.border,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      );
+}
+
 /// Chọn nguồn ảnh (chụp / thư viện) rồi nén, trả về đường dẫn local.
 Future<String?> pickImage(BuildContext context, ImageService svc) async {
   final fromCamera = await showModalBottomSheet<bool>(
@@ -214,6 +245,7 @@ Future<String?> pickImage(BuildContext context, ImageService svc) async {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          const SheetHeader('Chọn ảnh'),
           ListTile(
             leading: const Icon(Icons.photo_camera, color: AppColors.primary),
             title: const Text('Chụp ảnh'),

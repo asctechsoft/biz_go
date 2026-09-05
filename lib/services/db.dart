@@ -7,10 +7,10 @@ import '../models/app_notification.dart';
 import '../models/app_user.dart';
 import '../models/audit_log.dart';
 import '../models/customer.dart';
-import '../models/fleet.dart';
 import '../models/order.dart';
 import '../models/payment.dart';
 import '../models/product.dart';
+import '../models/shop_info.dart';
 
 /// Single Firestore gateway. Business actions (create order, record payment,
 /// status transitions) run in transactions and always append timeline +
@@ -28,32 +28,84 @@ class Db {
       _db.collection('orders');
   CollectionReference<Map<String, dynamic>> get _payments =>
       _db.collection('payments');
-  CollectionReference<Map<String, dynamic>> get _vehicles =>
-      _db.collection('vehicles');
-  CollectionReference<Map<String, dynamic>> get _drivers =>
-      _db.collection('drivers');
-  CollectionReference<Map<String, dynamic>> get _trips => _db.collection('trips');
   CollectionReference<Map<String, dynamic>> get _notifs =>
       _db.collection('notifications');
   CollectionReference<Map<String, dynamic>> get _users =>
       _db.collection('users');
 
+  // ---------- Thông tin cửa hàng in trên phiếu ----------
+  DocumentReference<Map<String, dynamic>> get _shopDoc =>
+      _db.collection('meta').doc('shop');
+
+  /// Tiêu đề + SĐT in trên phiếu giao hàng.
+  ///
+  /// Chưa đặt SĐT riêng thì lấy SĐT tài khoản **Chủ** — số Chủ nhập lúc thiết
+  /// lập lần đầu, nên phiếu có số đúng ngay mà không cần vào Cài đặt.
+  Stream<ShopInfo> shopInfo() => _shopDoc.snapshots().asyncMap((d) async {
+    final info = ShopInfo.fromMap(d.data());
+    if (info.phone.isNotEmpty) return info;
+    return info.copyWith(phone: await _ownerPhone());
+  });
+
+  /// Bản ghi **thô** ở `meta/shop` — KHÔNG thay SĐT trống bằng số của Chủ.
+  /// Màn Cài đặt phiếu cần bản này để biết người dùng có đặt SĐT riêng hay
+  /// không; nếu dùng [shopInfo] thì ô nhập sẽ bị đổ sẵn số của Chủ và bấm Lưu
+  /// là chép cứng số đó vào, Chủ đổi số sau này phiếu vẫn in số cũ.
+  Future<ShopInfo> shopInfoRaw() async =>
+      ShopInfo.fromMap((await _shopDoc.get()).data());
+
+  /// SĐT của tài khoản Chủ. Chuỗi rỗng nếu chưa có Chủ (chưa thiết lập xong).
+  ///
+  /// Có thể có **nhiều Chủ** (2 người cùng quản 1 cửa hàng) nên phải chọn
+  /// **tất định**: sắp theo uid rồi lấy đầu. Nếu dùng `limit(1)` thì Firestore
+  /// trả doc nào tuỳ lúc → phiếu in lúc ra số Chủ này, lúc ra số Chủ kia.
+  /// Muốn chắc chắn thì đặt SĐT riêng ở **Cài đặt phiếu**.
+  Future<String> ownerPhone() => _ownerPhone();
+
+  Future<String> _ownerPhone() async {
+    final owners = await _ownerDocs();
+    if (owners.isEmpty) return '';
+    owners.sort((a, b) => a.id.compareTo(b.id));
+    return (owners.first.data()['phone'] as String?)?.trim() ?? '';
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  _ownerDocs() async => (await _users
+          .where('role', isEqualTo: UserRole.owner.name)
+          .get())
+      .docs;
+
+  /// Số tài khoản Chủ hiện có. Dùng để KHÔNG cho xoá/hạ cấp/khoá Chủ cuối cùng
+  /// — mất hết Chủ là không ai vào được Quản lý người dùng để dựng lại.
+  Future<int> _ownerCount() async => (await _ownerDocs()).length;
+
+  /// Số Chủ còn **bật** (active). Khoá nốt người cuối cũng khoá luôn quản trị.
+  Future<int> _activeOwnerCount() async =>
+      (await _ownerDocs()).where((d) => d.data()['active'] != false).length;
+
+  Future<void> saveShopInfo(ShopInfo info) =>
+      _shopDoc.set(info.toMap(), SetOptions(merge: true));
+
   // ---------- Users (quản lý người dùng) ----------
-  Stream<List<AppUser>> users() => _users
-      .snapshots()
-      .map((s) => s.docs.map((d) => AppUser.fromMap(d.id, d.data())).toList()
-        ..sort((a, b) => a.role.index.compareTo(b.role.index)));
+  Stream<List<AppUser>> users() => _users.snapshots().map(
+    (s) =>
+        s.docs.map((d) => AppUser.fromMap(d.id, d.data())).toList()
+          ..sort((a, b) => a.role.index.compareTo(b.role.index)),
+  );
 
-  Stream<List<AppUser>> usersByRole(UserRole role) => _users
-      .where('role', isEqualTo: role.name)
-      .snapshots()
-      .map((s) => s.docs
-          .map((d) => AppUser.fromMap(d.id, d.data()))
-          .where((u) => u.active)
-          .toList());
-
-  Future<void> setUserActive(String uid, bool active) =>
-      _users.doc(uid).update({'active': active});
+  Future<void> setUserActive(String uid, bool active) async {
+    if (!active) {
+      final snap = await _users.doc(uid).get();
+      if (roleFromName(snap.data()?['role']) == UserRole.owner &&
+          await _activeOwnerCount() <= 1) {
+        throw Exception(
+          'Đây là tài khoản Chủ đang hoạt động duy nhất — khoá lại thì không '
+          'ai quản trị được nữa.',
+        );
+      }
+    }
+    await _users.doc(uid).update({'active': active});
+  }
 
   /// Xoá hồ sơ người dùng (bấm nhầm khi tạo tài khoản thì xoá được).
   ///
@@ -68,6 +120,18 @@ class Db {
     String actorName = '',
   }) async {
     final snap = await _users.doc(uid).get();
+    if (!snap.exists) return; // ai đó vừa xoá rồi — coi như xong
+    if (uid == actorId) {
+      throw Exception('Không thể tự xoá tài khoản của chính mình.');
+    }
+    // Chặn ở tầng Db chứ không chỉ ở UI: 2 Chủ cùng mở màn này, mỗi người xoá
+    // người kia thì danh sách trên máy ai cũng còn 2 dòng, UI cho qua hết.
+    if (roleFromName(snap.data()?['role']) == UserRole.owner &&
+        await _ownerCount() <= 1) {
+      throw Exception(
+        'Đây là tài khoản Chủ duy nhất — xoá đi thì không ai quản trị được nữa.',
+      );
+    }
     await _users.doc(uid).delete();
     await _audit(
       action: 'DELETE_USER',
@@ -81,13 +145,27 @@ class Db {
   }
 
   /// Cập nhật hồ sơ user (tên / vai trò). Không đổi SĐT vì gắn với đăng nhập.
-  Future<void> updateUser(String uid, {String? name, UserRole? role}) {
+  ///
+  /// Hạ cấp Chủ cuối cùng bị chặn — nếu không thì tự tay bấm nhầm là khoá
+  /// chính mình ra ngoài, không còn ai vào `/users` để dựng lại Chủ.
+  Future<void> updateUser(String uid, {String? name, UserRole? role}) async {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
     if (role != null) data['role'] = role.name;
-    if (data.isEmpty) return Future.value();
-    return _users.doc(uid).update(data);
+    if (data.isEmpty) return;
+    if (role != null && role != UserRole.owner) {
+      final snap = await _users.doc(uid).get();
+      if (roleFromName(snap.data()?['role']) == UserRole.owner &&
+          await _ownerCount() <= 1) {
+        throw Exception(
+          'Đây là tài khoản Chủ duy nhất — đổi vai trò thì không ai quản trị '
+          'được nữa. Tạo thêm một Chủ khác trước đã.',
+        );
+      }
+    }
+    await _users.doc(uid).update(data);
   }
+
   CollectionReference<Map<String, dynamic>> get _priceHistory =>
       _db.collection('price_history');
   CollectionReference<Map<String, dynamic>> get _audits =>
@@ -127,7 +205,10 @@ class Db {
   Stream<List<ProductCategory>> categories() => _categories
       .orderBy('name')
       .snapshots()
-      .map((s) => s.docs.map((d) => ProductCategory.fromMap(d.id, d.data())).toList());
+      .map(
+        (s) =>
+            s.docs.map((d) => ProductCategory.fromMap(d.id, d.data())).toList(),
+      );
 
   Future<String> upsertCategory(ProductCategory c) async {
     if (c.id.isEmpty) {
@@ -146,8 +227,10 @@ class Db {
       .snapshots()
       .map((s) => s.docs.map((d) => Product.fromMap(d.id, d.data())).toList());
 
-  Stream<Product> product(String id) =>
-      _products.doc(id).snapshots().map((d) => Product.fromMap(d.id, d.data()!));
+  Stream<Product> product(String id) => _products
+      .doc(id)
+      .snapshots()
+      .map((d) => Product.fromMap(d.id, d.data()!));
 
   Future<String> upsertProduct(Product p) async {
     if (p.id.isEmpty) {
@@ -167,15 +250,15 @@ class Db {
 
   /// Danh sách đơn vị: mặc định + các đơn vị tùy chỉnh đã lưu.
   Stream<List<String>> units() => _unitsDoc.snapshots().map((d) {
-        final custom = ((d.data()?['items'] as List?) ?? [])
-            .map((e) => e.toString())
-            .toList();
-        final all = [...defaultUnits];
-        for (final u in custom) {
-          if (!all.contains(u)) all.add(u);
-        }
-        return all;
-      });
+    final custom = ((d.data()?['items'] as List?) ?? [])
+        .map((e) => e.toString())
+        .toList();
+    final all = [...defaultUnits];
+    for (final u in custom) {
+      if (!all.contains(u)) all.add(u);
+    }
+    return all;
+  });
 
   /// Lưu đơn vị tùy chỉnh mới vào list (bỏ qua nếu trùng default).
   Future<void> addUnit(String unit) async {
@@ -192,8 +275,10 @@ class Db {
       .snapshots()
       .map((s) => s.docs.map((d) => Customer.fromMap(d.id, d.data())).toList());
 
-  Stream<Customer> customer(String id) =>
-      _customers.doc(id).snapshots().map((d) => Customer.fromMap(d.id, d.data()!));
+  Stream<Customer> customer(String id) => _customers
+      .doc(id)
+      .snapshots()
+      .map((d) => Customer.fromMap(d.id, d.data()!));
 
   Future<String> upsertCustomer(Customer c) async {
     if (c.id.isEmpty) {
@@ -205,11 +290,107 @@ class Db {
     return c.id;
   }
 
+  /// Xoá hồ sơ khách hàng.
+  ///
+  /// **Còn nợ thì không xoá** — xoá đi là mất dấu khoản phải thu, không đối
+  /// chiếu lại được. Chặn ngay ở tầng Db chứ không chỉ ở UI: đọc lại `debt`
+  /// từ Firestore ngay trước khi xoá, phòng trường hợp màn hình đang cầm dữ
+  /// liệu cũ (vừa có đơn mới ghi nợ ở máy khác).
+  ///
+  /// Đơn cũ KHÔNG bị xoá và vẫn hiển thị đúng: đơn snapshot tên + SĐT + địa
+  /// chỉ giao ngay lúc tạo, không đọc ngược sang `customers`.
+  Future<void> deleteCustomer(
+    String id, {
+    String actorId = '',
+    String actorName = '',
+  }) async {
+    final snap = await _customers.doc(id).get();
+    final data = snap.data();
+    final debt = (data?['debt'] ?? 0) as int;
+    if (debt > 0) {
+      throw Exception(
+        'Khách còn nợ ${money(debt)} — thu hết nợ rồi mới xoá được.',
+      );
+    }
+    await _customers.doc(id).delete();
+    await _audit(
+      action: 'DELETE_CUSTOMER',
+      entityType: 'customer',
+      entityId: id,
+      actorId: actorId,
+      actorName: actorName,
+      before: data,
+      note: 'Xoá hồ sơ khách hàng (đơn cũ giữ nguyên)',
+    );
+  }
+
   // ---------- Orders (queries) ----------
-  Stream<List<Order>> orders() => _orders
+  /// Đơn trong [days] ngày gần nhất (mặc định 30).
+  ///
+  /// KHÔNG tải hết collection: 20 đơn/ngày thì sau vài tháng là hàng nghìn doc,
+  /// mỗi lần mở tab đọc lại toàn bộ — chậm máy và tốn lượt đọc Firestore. Màn
+  /// Đơn hàng tăng [days] khi bấm "Tải thêm".
+  ///
+  /// Range + orderBy cùng trên `createdAt` nên không cần composite index.
+  Stream<List<Order>> orders({int days = 30}) {
+    final now = DateTime.now();
+    final from = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: days - 1)).millisecondsSinceEpoch;
+    return _orders
+        .where('createdAt', isGreaterThanOrEqualTo: from)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((s) => s.docs.map((d) => Order.fromMap(d.id, d.data())).toList());
+  }
+
+  /// Toàn bộ đơn, không giới hạn ngày. Dùng cho báo cáo/xuất Excel — chỗ đó
+  /// người dùng chủ động chọn khoảng thời gian nên chấp nhận đọc nhiều.
+  Stream<List<Order>> allOrders() => _orders
       .orderBy('createdAt', descending: true)
       .snapshots()
       .map((s) => s.docs.map((d) => Order.fromMap(d.id, d.data())).toList());
+
+  /// Bật/tắt cờ **Gấp**. Đơn gấp ghim lên đầu danh sách trong ngày.
+  Future<void> setOrderPriority(
+    Order o,
+    bool priority, {
+    required String actorId,
+    required String actorName,
+  }) async {
+    await _orders.doc(o.id).update({'priority': priority});
+    await _appendTimeline(
+      o.id,
+      TimelineEvent(
+        at: DateTime.now(),
+        title: priority ? 'Đánh dấu GẤP' : 'Bỏ đánh dấu GẤP',
+        actorId: actorId,
+        actorName: actorName,
+      ),
+    );
+    await _audit(
+      action: priority ? 'mark_priority' : 'unmark_priority',
+      entityType: 'order',
+      entityId: o.id,
+      actorId: actorId,
+      actorName: actorName,
+      before: {'priority': o.priority},
+      after: {'priority': priority},
+    );
+    // Chỉ báo khi BẬT — tắt cờ thì không ai cần biết gấp gáp gì.
+    if (priority) {
+      await _notify(
+        title: 'Đơn GẤP: ${o.code}',
+        body: '${o.customerName} · cần ưu tiên xử lý trước',
+        refType: NotifRefType.order,
+        refId: o.id,
+        roles: {UserRole.owner, UserRole.checker},
+        icon: 'alert',
+      );
+    }
+  }
 
   Stream<Order> order(String id) =>
       _orders.doc(id).snapshots().map((d) => Order.fromMap(d.id, d.data()!));
@@ -217,23 +398,101 @@ class Db {
   Stream<List<Order>> ordersByCustomer(String customerId) => _orders
       .where('customerId', isEqualTo: customerId)
       .snapshots()
-      .map((s) => (s.docs.map((d) => Order.fromMap(d.id, d.data())).toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt))));
+      .map(
+        (s) =>
+            (s.docs.map((d) => Order.fromMap(d.id, d.data())).toList()
+              ..sort((a, b) => b.createdAt.compareTo(a.createdAt))),
+      );
 
-  Stream<List<Order>> ordersByTrip(String tripId) => _orders
-      .where('tripId', isEqualTo: tripId)
-      .snapshots()
-      .map((s) => (s.docs.map((d) => Order.fromMap(d.id, d.data())).toList()
-        ..sort((a, b) => a.sequence.compareTo(b.sequence))));
-
-  /// Orders that are PACKED and not yet on a trip — dispatch pool.
-  Stream<List<Order>> ordersReadyForTrip() => _orders
+  /// Đơn đã đóng hàng, **chờ xuất phát** — nguồn cho màn Giao hàng và tab
+  /// "Đã đóng" ở màn Kho. Lọc `warehouseStatus` trên Firestore rồi lọc tiếp
+  /// trong Dart để khỏi cần composite index.
+  Stream<List<Order>> ordersWaitingDepart() => _orders
       .where('warehouseStatus', isEqualTo: WarehouseStatus.PACKED.name)
       .snapshots()
-      .map((s) => s.docs
-          .map((d) => Order.fromMap(d.id, d.data()))
-          .where((o) => o.tripId == null && o.orderStatus != OrderStatus.CANCELLED)
-          .toList());
+      .map(
+        (s) => s.docs
+            .map((d) => Order.fromMap(d.id, d.data()))
+            .where(
+              (o) =>
+                  o.orderStatus != OrderStatus.CANCELLED &&
+                  _waitingDepart.contains(o.deliveryStatus),
+            )
+            .toList()
+          ..sort((a, b) {
+            // Đơn GẤP lên đầu, còn lại đơn cũ trước (đóng trước đi trước).
+            if (a.priority != b.priority) return a.priority ? -1 : 1;
+            return a.createdAt.compareTo(b.createdAt);
+          }),
+      );
+
+  /// Đơn đang trên đường — Chủ đối soát cuối ngày ở đây.
+  /// `ARRIVED` là trạng thái legacy của luồng tài xế cũ, vẫn gom vào đây để
+  /// đơn kẹt lại từ trước không biến mất khỏi màn đối soát.
+  Stream<List<Order>> ordersDelivering() => _orders
+      .where('deliveryStatus', whereIn: _delivering.map((e) => e.name).toList())
+      .snapshots()
+      .map(
+        (s) => s.docs
+            .map((d) => Order.fromMap(d.id, d.data()))
+            .where((o) => o.orderStatus != OrderStatus.CANCELLED)
+            .toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt)),
+      );
+
+  /// Đơn đã chốt trong ngày [day] — tab "Xong hôm nay" của màn đối soát.
+  ///
+  /// Range trên `createdAt` (lùi [lookbackDays] ngày) để KHÔNG quét cả
+  /// collection — đơn chốt hôm nay thì gần như chắc chắn được tạo trong khoảng
+  /// đó, mà vẫn chỉ dùng một field nên không cần composite index. Trạng thái
+  /// và mốc chốt lọc tiếp trong Dart.
+  Stream<List<Order>> ordersSettledOn(DateTime day, {int lookbackDays = 30}) {
+    final from = DateTime(day.year, day.month, day.day);
+    final to = from.add(const Duration(days: 1));
+    final since = from
+        .subtract(Duration(days: lookbackDays))
+        .millisecondsSinceEpoch;
+    return _orders
+        .where('createdAt', isGreaterThanOrEqualTo: since)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map(
+          (s) => s.docs
+              .map((d) => Order.fromMap(d.id, d.data()))
+              .where((o) {
+                if (!_settled.contains(o.deliveryStatus)) return false;
+                // Đơn không có field "giờ chốt" riêng → lấy mốc cuối trong
+                // timeline (bước chốt luôn là event mới nhất).
+                final at = o.timeline.isEmpty
+                    ? o.createdAt
+                    : o.timeline
+                          .map((e) => e.at)
+                          .reduce((a, b) => a.isAfter(b) ? a : b);
+                return !at.isBefore(from) && at.isBefore(to);
+              })
+              .toList(),
+        );
+  }
+
+  /// Đơn đã đóng hàng nhưng chưa cho đi.
+  /// `ASSIGNED`/`LOADING` là tàn dư luồng chuyến xe cũ — vẫn cho xuất phát.
+  static const _waitingDepart = {
+    DeliveryStatus.WAITING_ASSIGNMENT,
+    DeliveryStatus.ASSIGNED,
+    DeliveryStatus.LOADING,
+    DeliveryStatus.RESCHEDULED,
+  };
+
+  static const _delivering = {
+    DeliveryStatus.ON_THE_WAY,
+    DeliveryStatus.ARRIVED,
+  };
+
+  static const _settled = {
+    DeliveryStatus.DELIVERED,
+    DeliveryStatus.FAILED,
+    DeliveryStatus.RETURNED,
+  };
 
   // ---------- Sequence counters ----------
   Future<int> _nextSeq(String kind, DateTime day) async {
@@ -248,8 +507,11 @@ class Db {
   }
 
   // ---------- Create order (spec §7) ----------
-  Future<Order> createOrder(Order draft,
-      {required String actorId, required String actorName}) async {
+  Future<Order> createOrder(
+    Order draft, {
+    required String actorId,
+    required String actorName,
+  }) async {
     final now = draft.createdAt;
     final seq = await _nextSeq('order', now);
     final code = orderCode(now, seq);
@@ -341,29 +603,48 @@ class Db {
 
   // ---------- Warehouse transitions (spec §9) ----------
   Future<void> startPreparing(Order o, String actorId, String actorName) =>
-      _warehouseStep(o, WarehouseStatus.PREPARING, OrderStatus.PROCESSING,
-          'Kho bắt đầu chuẩn bị', actorId, actorName);
+      _warehouseStep(
+        o,
+        WarehouseStatus.PREPARING,
+        OrderStatus.PROCESSING,
+        'Kho bắt đầu chuẩn bị',
+        actorId,
+        actorName,
+      );
 
   Future<void> markPrepared(Order o, String actorId, String actorName) async {
-    await _warehouseStep(o, WarehouseStatus.PREPARED, OrderStatus.PROCESSING,
-        'Kho đã chuẩn bị xong', actorId, actorName);
+    await _warehouseStep(
+      o,
+      WarehouseStatus.PREPARED,
+      OrderStatus.PROCESSING,
+      'Kho đã chuẩn bị xong',
+      actorId,
+      actorName,
+    );
     await _notify(
-        title: 'Đơn ${o.code} chờ đóng hàng',
-        body: 'Kho đã chuẩn bị xong',
-        refType: NotifRefType.order,
-        refId: o.id,
-        roles: {UserRole.checker},
-        icon: 'box');
+      title: 'Đơn ${o.code} chờ đóng hàng',
+      body: 'Kho đã chuẩn bị xong',
+      refType: NotifRefType.order,
+      refId: o.id,
+      roles: {UserRole.checker},
+      icon: 'box',
+    );
   }
 
   /// §8 intermediate: packer starts packing (PREPARED → PACKING).
   Future<void> startPacking(Order o, String actorId, String actorName) =>
-      _warehouseStep(o, WarehouseStatus.PACKING, OrderStatus.PROCESSING,
-          'Bắt đầu đóng hàng', actorId, actorName);
+      _warehouseStep(
+        o,
+        WarehouseStatus.PACKING,
+        OrderStatus.PROCESSING,
+        'Bắt đầu đóng hàng',
+        actorId,
+        actorName,
+      );
 
   /// Cấp mã kiện kế tiếp `KIyyMMdd-NNN`. Gọi lúc mở dialog "Đóng hàng xong"
-  /// để hiện mã sẵn; huỷ dialog thì số đó bị bỏ (giống mã đơn/mã chuyến, có
-  /// thể khuyết số — chấp nhận được, đổi lấy việc mã hiện ngay).
+  /// để hiện mã sẵn; huỷ dialog thì số đó bị bỏ (giống mã đơn, có thể khuyết
+  /// số — chấp nhận được, đổi lấy việc mã hiện ngay).
   Future<String> nextPackageCode([DateTime? day]) async {
     final now = day ?? DateTime.now();
     return packageCode(now, await _nextSeq('package', now));
@@ -371,11 +652,15 @@ class Db {
 
   /// [weightKg] phải đã quy về kg; [weightUnit] chỉ để hiển thị lại.
   /// [code] là mã kiện đã cấp sẵn ở dialog — null thì tự cấp ở đây.
-  Future<void> markPacked(Order o, String actorId, String actorName,
-      {String? code,
-      double? weightKg,
-      String weightUnit = 'kg',
-      String note = ''}) async {
+  Future<void> markPacked(
+    Order o,
+    String actorId,
+    String actorName, {
+    String? code,
+    double? weightKg,
+    String weightUnit = 'kg',
+    String note = '',
+  }) async {
     final pkgCode = code ?? await nextPackageCode();
     await _orders.doc(o.id).update({
       'warehouseStatus': WarehouseStatus.PACKED.name,
@@ -384,57 +669,70 @@ class Db {
       'weightUnit': weightUnit,
     });
     await _appendTimeline(
-        o.id,
-        TimelineEvent(
-            at: DateTime.now(),
-            title: 'Đóng hàng xong',
-            note: note,
-            actorId: actorId,
-            actorName: actorName));
-    await _audit(
-        action: 'pack_order',
-        entityType: 'order',
-        entityId: o.id,
+      o.id,
+      TimelineEvent(
+        at: DateTime.now(),
+        title: 'Đóng hàng xong',
+        note: note,
         actorId: actorId,
         actorName: actorName,
-        before: {'warehouseStatus': o.warehouseStatus.name},
-        after: {
-          'warehouseStatus': WarehouseStatus.PACKED.name,
-          'packageCode': pkgCode,
-          'weightKg': weightKg,
-          'weightUnit': weightUnit,
-        });
+      ),
+    );
+    await _audit(
+      action: 'pack_order',
+      entityType: 'order',
+      entityId: o.id,
+      actorId: actorId,
+      actorName: actorName,
+      before: {'warehouseStatus': o.warehouseStatus.name},
+      after: {
+        'warehouseStatus': WarehouseStatus.PACKED.name,
+        'packageCode': pkgCode,
+        'weightKg': weightKg,
+        'weightUnit': weightUnit,
+      },
+    );
     await _notify(
-        title: 'Đơn ${o.code} chờ xếp chuyến',
-        body: 'Đã đóng hàng · $pkgCode · ${fmtWeight(weightKg, weightUnit)}',
-        refType: NotifRefType.order,
-        refId: o.id,
-        roles: {UserRole.owner},
-        icon: 'truck');
+      title: 'Đơn ${o.code} chờ xuất phát',
+      body: 'Đã đóng hàng · $pkgCode · ${fmtWeight(weightKg, weightUnit)}',
+      refType: NotifRefType.order,
+      refId: o.id,
+      roles: {UserRole.owner},
+      icon: 'truck',
+    );
   }
 
-  Future<void> _warehouseStep(Order o, WarehouseStatus ws, OrderStatus os,
-      String title, String actorId, String actorName) async {
+  Future<void> _warehouseStep(
+    Order o,
+    WarehouseStatus ws,
+    OrderStatus os,
+    String title,
+    String actorId,
+    String actorName,
+  ) async {
     await _orders.doc(o.id).update({
       'warehouseStatus': ws.name,
       'orderStatus': os.name,
     });
     await _appendTimeline(
-        o.id,
-        TimelineEvent(
-            at: DateTime.now(),
-            title: title,
-            actorId: actorId,
-            actorName: actorName));
-    await _audit(
-        action: 'warehouse_step',
-        entityType: 'order',
-        entityId: o.id,
+      o.id,
+      TimelineEvent(
+        at: DateTime.now(),
+        title: title,
         actorId: actorId,
         actorName: actorName,
-        before: {'warehouseStatus': o.warehouseStatus.name},
-        after: {'warehouseStatus': ws.name},
-        note: title);
+      ),
+    );
+    await _audit(
+      action: 'warehouse_step',
+      entityType: 'order',
+      entityId: o.id,
+      actorId: actorId,
+      actorName: actorName,
+      before: {'warehouseStatus': o.warehouseStatus.name},
+      after: {'warehouseStatus': ws.name},
+      note: title,
+    );
   }
 
   // ---------- Payments (spec §12) ----------
@@ -483,7 +781,7 @@ class Db {
             note: note,
             actorId: actorId,
             actorName: actorName,
-          ).toMap()
+          ).toMap(),
         ]),
       });
       tx.set(custRef, {
@@ -493,29 +791,31 @@ class Db {
     });
 
     await _audit(
-        action: 'record_payment',
-        entityType: 'payment',
-        entityId: payRef.id,
-        actorId: actorId,
-        actorName: actorName,
-        after: {
-          'orderId': order.id,
-          'orderCode': order.code,
-          'amount': amount,
-          'method': method.name,
-        },
-        note: '${order.customerName} · ${money(amount)}');
+      action: 'record_payment',
+      entityType: 'payment',
+      entityId: payRef.id,
+      actorId: actorId,
+      actorName: actorName,
+      after: {
+        'orderId': order.id,
+        'orderCode': order.code,
+        'amount': amount,
+        'method': method.name,
+      },
+      note: '${order.customerName} · ${money(amount)}',
+    );
 
     // Notify accountant on remaining debt.
     final remaining = order.total - (order.paidAmount + amount);
     if (remaining > 0) {
       await _notify(
-          title: 'Công nợ mới ${money(remaining)}',
-          body: '${order.customerName} còn thiếu tại đơn ${order.code}',
-          refType: NotifRefType.debt,
-          refId: order.customerId,
-          roles: {UserRole.owner},
-          icon: 'debt');
+        title: 'Công nợ mới ${money(remaining)}',
+        body: '${order.customerName} còn thiếu tại đơn ${order.code}',
+        refType: NotifRefType.debt,
+        refId: order.customerId,
+        roles: {UserRole.owner},
+        icon: 'debt',
+      );
     }
   }
 
@@ -532,14 +832,15 @@ class Db {
     String note = '',
   }) async {
     if (amount <= 0) return;
-    final snap =
-        await _orders.where('customerId', isEqualTo: customerId).get();
-    final debtOrders = snap.docs
-        .map((d) => Order.fromMap(d.id, d.data()))
-        .where((o) =>
-            o.remaining > 0 && o.orderStatus != OrderStatus.CANCELLED)
-        .toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final snap = await _orders.where('customerId', isEqualTo: customerId).get();
+    final debtOrders =
+        snap.docs
+            .map((d) => Order.fromMap(d.id, d.data()))
+            .where(
+              (o) => o.remaining > 0 && o.orderStatus != OrderStatus.CANCELLED,
+            )
+            .toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     final plan = <String, int>{};
     if (allocations != null) {
@@ -573,43 +874,24 @@ class Db {
   Stream<List<Payment>> paymentsByOrder(String orderId) => _payments
       .where('orderId', isEqualTo: orderId)
       .snapshots()
-      .map((s) => (s.docs.map((d) => Payment.fromMap(d.id, d.data())).toList()
-        ..sort((a, b) => a.at.compareTo(b.at))));
+      .map(
+        (s) =>
+            (s.docs.map((d) => Payment.fromMap(d.id, d.data())).toList()
+              ..sort((a, b) => a.at.compareTo(b.at))),
+      );
 
-  Stream<List<Payment>> paymentsAll() => _payments
-      .snapshots()
-      .map((s) => s.docs.map((d) => Payment.fromMap(d.id, d.data())).toList());
+  Stream<List<Payment>> paymentsAll() => _payments.snapshots().map(
+    (s) => s.docs.map((d) => Payment.fromMap(d.id, d.data())).toList(),
+  );
 
   Stream<List<Payment>> paymentsByCustomer(String customerId) => _payments
       .where('customerId', isEqualTo: customerId)
       .snapshots()
-      .map((s) => (s.docs.map((d) => Payment.fromMap(d.id, d.data())).toList()
-        ..sort((a, b) => b.at.compareTo(a.at))));
-
-  // ---------- Vehicles / Drivers ----------
-  Stream<List<Vehicle>> vehicles() => _vehicles
-      .snapshots()
-      .map((s) => s.docs.map((d) => Vehicle.fromMap(d.id, d.data())).toList());
-
-  Future<String> upsertVehicle(Vehicle v) async {
-    if (v.id.isEmpty) return (await _vehicles.add(v.toMap())).id;
-    await _vehicles.doc(v.id).set(v.toMap());
-    return v.id;
-  }
-
-  Future<void> deleteVehicle(String id) => _vehicles.doc(id).delete();
-
-  Stream<List<Driver>> drivers() => _drivers
-      .snapshots()
-      .map((s) => s.docs.map((d) => Driver.fromMap(d.id, d.data())).toList());
-
-  Future<String> upsertDriver(Driver d) async {
-    if (d.id.isEmpty) return (await _drivers.add(d.toMap())).id;
-    await _drivers.doc(d.id).set(d.toMap());
-    return d.id;
-  }
-
-  Future<void> deleteDriver(String id) => _drivers.doc(id).delete();
+      .map(
+        (s) =>
+            (s.docs.map((d) => Payment.fromMap(d.id, d.data())).toList()
+              ..sort((a, b) => b.at.compareTo(a.at))),
+      );
 
   // ---------- Price history (spec §5.3) ----------
   Future<void> logPriceChange({
@@ -639,257 +921,132 @@ class Db {
       'at': DateTime.now().millisecondsSinceEpoch,
     });
     await _audit(
-        action: 'price_change',
-        entityType: 'packaging',
-        entityId: packagingId,
-        actorId: actorId,
-        actorName: actorName,
-        before: {'price': oldPrice},
-        after: {'price': newPrice},
-        note: '$productName $packagingName');
+      action: 'price_change',
+      entityType: 'packaging',
+      entityId: packagingId,
+      actorId: actorId,
+      actorName: actorName,
+      before: {'price': oldPrice},
+      after: {'price': newPrice},
+      note: '$productName $packagingName',
+    );
   }
 
   Stream<List<PriceHistory>> priceHistory(String productId) => _priceHistory
       .where('productId', isEqualTo: productId)
       .snapshots()
-      .map((s) => s.docs.map((d) => PriceHistory.fromMap(d.id, d.data())).toList()
-        ..sort((a, b) => b.at.compareTo(a.at)));
+      .map(
+        (s) =>
+            s.docs.map((d) => PriceHistory.fromMap(d.id, d.data())).toList()
+              ..sort((a, b) => b.at.compareTo(a.at)),
+      );
 
-  // ---------- Trips (spec §10) ----------
-  Stream<List<Trip>> trips() => _trips
-      .orderBy('runDate', descending: true)
-      .snapshots()
-      .map((s) => s.docs.map((d) => Trip.fromMap(d.id, d.data())).toList());
-
-  Stream<Trip> trip(String id) =>
-      _trips.doc(id).snapshots().map((d) => Trip.fromMap(d.id, d.data()!));
-
-  /// Chuyến của một tài xế (theo uid tài khoản) — app tài xế chỉ thấy chuyến mình.
-  Stream<List<Trip>> tripsForDriver(String driverId) => _trips
-      .where('driverId', isEqualTo: driverId)
-      .snapshots()
-      .map((s) => s.docs.map((d) => Trip.fromMap(d.id, d.data())).toList()
-        ..sort((a, b) => b.runDate.compareTo(a.runDate)));
-
-  /// Chuyến còn "giữ" xe + tài xế: chưa giao xong và chưa hủy. Chuyến
-  /// COMPLETED/CANCELLED thì xe và tài xế rảnh lại (chạy chuyến 2 trong ngày).
-  static bool tripHoldsResources(Trip t) =>
-      t.status != TripStatus.COMPLETED && t.status != TripStatus.CANCELLED;
-
-  /// Khoảng [từ, đến) theo millisecondsSinceEpoch của trọn ngày [day].
-  /// `runDate` lưu kèm cả giờ nên phải quét cả ngày, không so bằng `==`.
-  static (int, int) _dayRange(DateTime day) {
-    final from = DateTime(day.year, day.month, day.day);
-    return (
-      from.millisecondsSinceEpoch,
-      from.add(const Duration(days: 1)).millisecondsSinceEpoch,
-    );
-  }
-
-  /// Chuyến trong 1 ngày (mọi trạng thái) — để biết xe/tài xế nào đang rảnh.
-  /// Chỉ range trên MỘT field `runDate` → không cần composite index.
-  Stream<List<Trip>> tripsOnDate(DateTime day) {
-    final (from, to) = _dayRange(day);
-    return _trips
-        .where('runDate', isGreaterThanOrEqualTo: from)
-        .where('runDate', isLessThan: to)
-        .snapshots()
-        .map((s) => s.docs.map((d) => Trip.fromMap(d.id, d.data())).toList()
-          ..sort((a, b) => a.runDate.compareTo(b.runDate)));
-  }
-
-  /// Chuyến chưa xong trong ngày [day] — bản one-shot cho lúc lưu.
-  Future<List<Trip>> _openTripsOnDate(DateTime day) async {
-    final (from, to) = _dayRange(day);
-    final snap = await _trips
-        .where('runDate', isGreaterThanOrEqualTo: from)
-        .where('runDate', isLessThan: to)
-        .get();
-    return snap.docs
-        .map((d) => Trip.fromMap(d.id, d.data()))
-        .where(tripHoldsResources)
-        .toList();
-  }
-
-  Future<Trip> createTrip({
-    required DateTime runDate,
-    required Vehicle vehicle,
-    required Driver driver,
-    DateTime? plannedDeparture,
-    String note = '',
-  }) async {
-    // Xe / tài xế đang có chuyến chưa xong trong ngày thì không nhận chuyến
-    // mới. Chặn ở tầng Db (không chỉ ở UI) để 2 người điều phối bấm cùng lúc
-    // hoặc stream trễ vẫn không tạo được chuyến trùng.
-    for (final t in await _openTripsOnDate(runDate)) {
-      if (t.vehicleId == vehicle.id) {
-        throw Exception(
-            'Xe ${vehicle.plate} đang chạy chuyến ${t.code} (chưa xong).');
-      }
-      if (t.driverId == driver.id) {
-        throw Exception(
-            'Tài xế ${driver.name} đang chạy chuyến ${t.code} (chưa xong).');
-      }
-    }
-    final seq = await _nextSeq('trip', runDate);
-    final ref = _trips.doc();
-    final trip = Trip(
-      id: ref.id,
-      code: tripCode(runDate, seq),
-      runDate: runDate,
-      vehicleId: vehicle.id,
-      vehiclePlate: vehicle.plate,
-      driverId: driver.id,
-      driverName: driver.name,
-      driverPhone: driver.phone,
-      status: TripStatus.READY,
-      plannedDeparture: plannedDeparture,
-      note: note,
-    );
-    await ref.set(trip.toMap());
-    return trip;
-  }
-
-  /// Assign order to trip (spec §10.4 + §22: must be PACKED & not on another trip).
-  Future<void> assignOrderToTrip(Order o, Trip t, int sequence) async {
+  // ---------- Cho đơn xuất phát (§11.2 rút gọn) ----------
+  /// Đơn đã đóng hàng → **Đang giao**. Không còn chuyến/tài xế: kho đóng xong
+  /// là bấm đi luôn. Chạy lại trên đơn đã đi thì bỏ qua, nên bấm nhầm 2 lần
+  /// không sinh timeline rác.
+  Future<void> departOrder(Order o, String actorId, String actorName) async {
+    if (!_waitingDepart.contains(o.deliveryStatus)) return;
     if (o.warehouseStatus != WarehouseStatus.PACKED) {
-      throw Exception('Đơn chưa đóng hàng (PACKED) nên không thể xếp chuyến.');
+      throw Exception('Đơn chưa đóng hàng xong nên chưa xuất phát được.');
     }
-    if (o.tripId != null && o.tripId != t.id) {
-      throw Exception('Đơn đã thuộc chuyến khác.');
+    if (o.orderStatus == OrderStatus.CANCELLED) {
+      throw Exception('Đơn đã hủy.');
     }
-    // Chuyến đã xuất phát → đơn mới vào chuyến chuyển thẳng sang Đang giao,
-    // nếu không sẽ kẹt ASSIGNED (không hiện nút giao, không xuất phát lại được).
-    final departed = t.status == TripStatus.IN_PROGRESS;
     final now = DateTime.now();
     await _orders.doc(o.id).update({
-      'tripId': t.id,
-      'sequence': sequence,
-      'deliveryStatus': (departed
-              ? DeliveryStatus.ON_THE_WAY
-              : DeliveryStatus.ASSIGNED)
-          .name,
+      'deliveryStatus': DeliveryStatus.ON_THE_WAY.name,
+      'orderStatus': OrderStatus.PROCESSING.name,
+      'timeline': FieldValue.arrayUnion([
+        TimelineEvent(
+          at: now,
+          title: 'Xuất phát giao hàng',
+          actorId: actorId,
+          actorName: actorName,
+        ).toMap(),
+      ]),
     });
-    await _appendTimeline(
-        o.id, TimelineEvent(at: now, title: 'Đã lên chuyến ${t.code}'));
-    if (departed) {
-      await _appendTimeline(o.id,
-          TimelineEvent(at: now, title: 'Xe đang giao (chuyến đã xuất phát)'));
-    }
-    await _recountTrip(t.id);
+    await _audit(
+      action: 'depart_order',
+      entityType: 'order',
+      entityId: o.id,
+      actorId: actorId,
+      actorName: actorName,
+      before: {'deliveryStatus': o.deliveryStatus.name},
+      after: {'deliveryStatus': DeliveryStatus.ON_THE_WAY.name},
+    );
     await _notify(
-        title: 'Bạn có đơn trong chuyến ${t.code}',
-        body: '${o.code} - ${o.customerName}',
-        refType: NotifRefType.trip,
-        refId: t.id,
-        roles: {UserRole.shipper},
-        icon: 'truck');
+      title: 'Đơn ${o.code} đã xuất phát',
+      body: '${o.customerName} · ${o.deliveryAddress}',
+      refType: NotifRefType.order,
+      refId: o.id,
+      roles: {UserRole.owner},
+      icon: 'depart',
+    );
   }
 
-  Future<void> removeOrderFromTrip(Order o) async {
-    final tripId = o.tripId;
-    await _orders.doc(o.id).update({
-      'tripId': null,
-      'sequence': 0,
-      'deliveryStatus': DeliveryStatus.WAITING_ASSIGNMENT.name,
-    });
-    if (tripId != null) await _recountTrip(tripId);
-  }
+  /// Cho **nhiều đơn** đi cùng lúc (nút "Xuất phát tất cả").
+  ///
+  /// Cập nhật đơn bằng một batch để không nửa vời khi rớt mạng giữa chừng;
+  /// audit + 1 thông báo gộp ghi sau, hỏng thì cũng không kẹt trạng thái đơn.
+  /// Trả về số đơn thực sự được cho đi.
+  Future<int> departOrders(
+    List<Order> orders,
+    String actorId,
+    String actorName,
+  ) async {
+    final go = orders
+        .where(
+          (o) =>
+              o.warehouseStatus == WarehouseStatus.PACKED &&
+              o.orderStatus != OrderStatus.CANCELLED &&
+              _waitingDepart.contains(o.deliveryStatus),
+        )
+        .toList();
+    if (go.isEmpty) return 0;
 
-  Future<void> reorderTripSequences(String tripId, List<Order> ordered) async {
-    final batch = _db.batch();
-    for (var i = 0; i < ordered.length; i++) {
-      batch.update(_orders.doc(ordered[i].id), {'sequence': i + 1});
-    }
-    await batch.commit();
-  }
-
-  Future<void> _recountTrip(String tripId) async {
-    final snap = await _orders.where('tripId', isEqualTo: tripId).get();
-    final orders = snap.docs.map((d) => Order.fromMap(d.id, d.data())).toList();
-    final delivered =
-        orders.where((o) => o.deliveryStatus == DeliveryStatus.DELIVERED).length;
-    // Còn đơn nào đang chờ xử lý (chưa giao/hoàn) không?
-    const pending = {
-      DeliveryStatus.WAITING_ASSIGNMENT,
-      DeliveryStatus.ASSIGNED,
-      DeliveryStatus.LOADING,
-      DeliveryStatus.ON_THE_WAY,
-      DeliveryStatus.ARRIVED,
-      DeliveryStatus.RESCHEDULED,
-    };
-    final anyPending = orders.any((o) => pending.contains(o.deliveryStatus));
-
-    final data = <String, dynamic>{
-      'orderCount': orders.length,
-      'deliveredCount': delivered,
-    };
-    // Chuyến đã xuất phát + hết đơn chờ → tự hoàn thành chuyến.
-    final tripDoc = await _trips.doc(tripId).get();
-    final curStatus = tripDoc.data()?['status'];
-    if (orders.isNotEmpty &&
-        !anyPending &&
-        curStatus == TripStatus.IN_PROGRESS.name) {
-      data['status'] = TripStatus.COMPLETED.name;
-    }
-    await _trips.doc(tripId).update(data);
-  }
-
-  /// Xe xuất phát (§11.2) — hoặc "đẩy tiếp" đơn mới xếp vào chuyến đang chạy.
-  /// Chỉ chuyển đơn CHƯA đi (ASSIGNED/WAITING/LOADING) sang ON_THE_WAY;
-  /// KHÔNG đụng đơn đã giao/hoàn/hẹn lại. Chạy lại nhiều lần vẫn an toàn.
-  Future<void> departTrip(Trip t, String actorId, String actorName) async {
     final now = DateTime.now();
-    final wasInProgress = t.status == TripStatus.IN_PROGRESS;
-    final tripData = <String, dynamic>{
-      'status': TripStatus.IN_PROGRESS.name,
-    };
-    // Chỉ ghi giờ xuất phát ở lần đầu.
-    if (!wasInProgress) {
-      tripData['actualDeparture'] = now.millisecondsSinceEpoch;
-    }
-    await _trips.doc(t.id).update(tripData);
-
-    const toDepart = {
-      DeliveryStatus.WAITING_ASSIGNMENT,
-      DeliveryStatus.ASSIGNED,
-      DeliveryStatus.LOADING,
-    };
-    final snap = await _orders.where('tripId', isEqualTo: t.id).get();
+    final event = TimelineEvent(
+      at: now,
+      title: 'Xuất phát giao hàng',
+      actorId: actorId,
+      actorName: actorName,
+    ).toMap();
     final batch = _db.batch();
-    for (final d in snap.docs) {
-      final o = Order.fromMap(d.id, d.data());
-      if (!toDepart.contains(o.deliveryStatus)) continue; // giữ nguyên đơn khác
-      batch.update(d.reference, {
+    for (final o in go) {
+      batch.update(_orders.doc(o.id), {
         'deliveryStatus': DeliveryStatus.ON_THE_WAY.name,
-        'timeline': FieldValue.arrayUnion([
-          TimelineEvent(at: now, title: 'Xe xuất phát', actorName: actorName)
-              .toMap()
-        ]),
+        'orderStatus': OrderStatus.PROCESSING.name,
+        'timeline': FieldValue.arrayUnion([event]),
       });
     }
     await batch.commit();
+
+    for (final o in go) {
+      await _audit(
+        action: 'depart_order',
+        entityType: 'order',
+        entityId: o.id,
+        actorId: actorId,
+        actorName: actorName,
+        before: {'deliveryStatus': o.deliveryStatus.name},
+        after: {'deliveryStatus': DeliveryStatus.ON_THE_WAY.name},
+        note: 'Xuất phát hàng loạt',
+      );
+    }
     await _notify(
-        title: wasInProgress
-            ? 'Chuyến ${t.code} có đơn mới đang giao'
-            : 'Chuyến ${t.code} đã xuất phát',
-        body: 'Tài xế ${t.driverName}',
-        refType: NotifRefType.trip,
-        refId: t.id,
-        roles: {UserRole.owner},
-        icon: 'depart');
+      title: '${go.length} đơn đã xuất phát',
+      body: go.map((o) => o.code).join(', '),
+      refType: NotifRefType.order,
+      refId: go.first.id,
+      roles: {UserRole.owner},
+      icon: 'depart',
+    );
+    return go.length;
   }
 
-  // ---------- Delivery per order (spec §11.3-11.5) ----------
-  Future<void> markArrived(Order o, String actorId, String actorName) async {
-    await _orders.doc(o.id).update({
-      'deliveryStatus': DeliveryStatus.ARRIVED.name,
-    });
-    await _appendTimeline(o.id,
-        TimelineEvent(at: DateTime.now(), title: 'Đã tới điểm giao', actorName: actorName));
-  }
-
-  /// Successful delivery + collect money in one step.
+  // ---------- Đối soát cuối ngày (§11.3-11.5) ----------
+  /// Giao thành công + thu tiền trong một bước. Chỉ Chủ gọi (xem `Perm`).
   Future<void> markDelivered({
     required Order order,
     required int collected,
@@ -912,23 +1069,33 @@ class Db {
       'deliveryStatus': DeliveryStatus.DELIVERED.name,
       'orderStatus': OrderStatus.COMPLETED.name,
     });
-    await _appendTimeline(order.id,
-        TimelineEvent(at: DateTime.now(), title: 'Giao thành công', actorName: actorName));
-    if (order.tripId != null) await _recountTrip(order.tripId!);
-    await _audit(
-        action: 'deliver_order',
-        entityType: 'order',
-        entityId: order.id,
-        actorId: actorId,
+    await _appendTimeline(
+      order.id,
+      TimelineEvent(
+        at: DateTime.now(),
+        title: 'Giao thành công',
         actorName: actorName,
-        after: {'deliveryStatus': DeliveryStatus.DELIVERED.name, 'collected': collected});
+      ),
+    );
+    await _audit(
+      action: 'deliver_order',
+      entityType: 'order',
+      entityId: order.id,
+      actorId: actorId,
+      actorName: actorName,
+      after: {
+        'deliveryStatus': DeliveryStatus.DELIVERED.name,
+        'collected': collected,
+      },
+    );
     await _notify(
-        title: 'Đơn ${order.code} giao thành công',
-        body: order.customerName,
-        refType: NotifRefType.order,
-        refId: order.id,
-        roles: {UserRole.owner, UserRole.checker},
-        icon: 'success');
+      title: 'Đơn ${order.code} giao thành công',
+      body: order.customerName,
+      refType: NotifRefType.order,
+      refId: order.id,
+      roles: {UserRole.owner, UserRole.checker},
+      icon: 'success',
+    );
   }
 
   Future<void> markDeliveryFailed({
@@ -941,27 +1108,44 @@ class Db {
   }) async {
     await _orders.doc(order.id).update({'deliveryStatus': status.name});
     await _appendTimeline(
-        order.id,
-        TimelineEvent(
-            at: DateTime.now(),
-            title: deliveryStatusUi(status).label,
-            note: reason,
-            actorName: actorName));
-    if (order.tripId != null) await _recountTrip(order.tripId!);
+      order.id,
+      TimelineEvent(
+        at: DateTime.now(),
+        title: deliveryStatusUi(status).label,
+        note: reason,
+        actorId: actorId,
+        actorName: actorName,
+      ),
+    );
+    await _audit(
+      action: 'delivery_failed',
+      entityType: 'order',
+      entityId: order.id,
+      actorId: actorId,
+      actorName: actorName,
+      before: {'deliveryStatus': order.deliveryStatus.name},
+      after: {'deliveryStatus': status.name},
+      note: reason,
+    );
     await _notify(
-        title: 'Đơn ${order.code} ${deliveryStatusUi(status).label}',
-        body: reason,
-        refType: NotifRefType.order,
-        refId: order.id,
-        roles: {UserRole.owner},
-        icon: 'fail');
+      title: 'Đơn ${order.code} ${deliveryStatusUi(status).label}',
+      body: reason,
+      refType: NotifRefType.order,
+      refId: order.id,
+      roles: {UserRole.owner},
+      icon: 'fail',
+    );
   }
 
   // ---------- Cancel order (spec §13, §22) ----------
   /// Hủy đơn: đối trừ công nợ khách, KHÔNG xóa payment cũ. Nếu đã thu tiền thì
   /// ghi một payment hoàn tiền (âm) để giữ dấu vết và trả totalPaid về đúng.
-  Future<void> cancelOrder(Order o, String reason, String actorName,
-      {String actorId = ''}) async {
+  Future<void> cancelOrder(
+    Order o,
+    String reason,
+    String actorName, {
+    String actorId = '',
+  }) async {
     final orderRef = _orders.doc(o.id);
     final custRef = _customers.doc(o.customerId);
     var refunded = 0;
@@ -972,8 +1156,9 @@ class Db {
       if (cur.orderStatus == OrderStatus.CANCELLED) return;
       final outstanding = cur.total - cur.paidAmount; // còn phải thu
       refunded = cur.paidAmount;
-      final ps =
-          cur.paidAmount > 0 ? PaymentStatus.REFUNDED : cur.paymentStatus;
+      final ps = cur.paidAmount > 0
+          ? PaymentStatus.REFUNDED
+          : cur.paymentStatus;
 
       tx.update(orderRef, {
         'orderStatus': OrderStatus.CANCELLED.name,
@@ -981,66 +1166,63 @@ class Db {
         'paymentStatus': ps.name,
         'timeline': FieldValue.arrayUnion([
           TimelineEvent(
-                  at: DateTime.now(),
-                  title: 'Hủy đơn',
-                  note: reason,
-                  actorId: actorId,
-                  actorName: actorName)
-              .toMap()
+            at: DateTime.now(),
+            title: 'Hủy đơn',
+            note: reason,
+            actorId: actorId,
+            actorName: actorName,
+          ).toMap(),
         ]),
       });
 
       // Gỡ toàn bộ đóng góp của đơn khỏi tổng hợp khách.
-      tx.set(
-          custRef,
-          {
-            'totalPurchased': FieldValue.increment(-cur.total),
-            'totalPaid': FieldValue.increment(-cur.paidAmount),
-            'debt': FieldValue.increment(-(outstanding > 0 ? outstanding : 0)),
-          },
-          SetOptions(merge: true));
+      tx.set(custRef, {
+        'totalPurchased': FieldValue.increment(-cur.total),
+        'totalPaid': FieldValue.increment(-cur.paidAmount),
+        'debt': FieldValue.increment(-(outstanding > 0 ? outstanding : 0)),
+      }, SetOptions(merge: true));
 
       // Ghi payment hoàn tiền (âm) — không đụng payment gốc.
       if (cur.paidAmount > 0) {
         final refRef = _payments.doc();
         tx.set(
-            refRef,
-            Payment(
-              id: refRef.id,
-              orderId: cur.id,
-              orderCode: cur.code,
-              customerId: cur.customerId,
-              customerName: cur.customerName,
-              amount: -cur.paidAmount,
-              method: PaymentMethod.cash,
-              at: DateTime.now(),
-              actorId: actorId,
-              actorName: actorName,
-              note: 'Hoàn tiền do hủy đơn: $reason',
-            ).toMap());
+          refRef,
+          Payment(
+            id: refRef.id,
+            orderId: cur.id,
+            orderCode: cur.code,
+            customerId: cur.customerId,
+            customerName: cur.customerName,
+            amount: -cur.paidAmount,
+            method: PaymentMethod.cash,
+            at: DateTime.now(),
+            actorId: actorId,
+            actorName: actorName,
+            note: 'Hoàn tiền do hủy đơn: $reason',
+          ).toMap(),
+        );
       }
     });
 
     await _audit(
-        action: 'cancel_order',
-        entityType: 'order',
-        entityId: o.id,
-        actorId: actorId,
-        actorName: actorName,
-        before: {
-          'orderStatus': o.orderStatus.name,
-          'paidAmount': o.paidAmount
-        },
-        after: {'orderStatus': OrderStatus.CANCELLED.name, 'refunded': refunded},
-        note: reason);
+      action: 'cancel_order',
+      entityType: 'order',
+      entityId: o.id,
+      actorId: actorId,
+      actorName: actorName,
+      before: {'orderStatus': o.orderStatus.name, 'paidAmount': o.paidAmount},
+      after: {'orderStatus': OrderStatus.CANCELLED.name, 'refunded': refunded},
+      note: reason,
+    );
 
     await _notify(
-        title: 'Đơn ${o.code} đã hủy',
-        body: reason,
-        refType: NotifRefType.order,
-        refId: o.id,
-        roles: {UserRole.owner, UserRole.checker},
-        icon: 'fail');
+      title: 'Đơn ${o.code} đã hủy',
+      body: reason,
+      refType: NotifRefType.order,
+      refId: o.id,
+      roles: {UserRole.owner, UserRole.checker},
+      icon: 'fail',
+    );
   }
 
   // ---------- Notifications ----------
@@ -1069,10 +1251,14 @@ class Db {
       .orderBy('at', descending: true)
       .limit(100)
       .snapshots()
-      .map((s) => s.docs
-          .map((d) => AppNotification.fromMap(d.id, d.data()))
-          .where((n) => n.targetRoles.contains(role) || role == UserRole.owner)
-          .toList());
+      .map(
+        (s) => s.docs
+            .map((d) => AppNotification.fromMap(d.id, d.data()))
+            .where(
+              (n) => n.targetRoles.contains(role) || role == UserRole.owner,
+            )
+            .toList(),
+      );
 
   Future<void> markNotifRead(String id) =>
       _notifs.doc(id).update({'read': true});
@@ -1098,6 +1284,7 @@ class Db {
     'customers',
     'orders',
     'payments',
+    // legacy — phân hệ chuyến xe/tài xế đã bỏ, vẫn xoá cho sạch dữ liệu cũ
     'vehicles',
     'drivers',
     'trips',

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/enums.dart';
+import '../../../core/error_text.dart';
 import '../../../core/formatters.dart';
 import '../../../core/theme.dart';
 import '../../../models/customer.dart';
@@ -10,6 +11,7 @@ import '../../../models/order.dart';
 import '../../../models/product.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../services/db.dart';
+import '../../../services/sound_service.dart';
 import '../../../widgets/common.dart';
 import '../../customers/customer_edit_screen.dart';
 import '../invoice_screen.dart';
@@ -118,6 +120,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     try {
       final order =
           await db.createOrder(draft, actorId: user.id, actorName: user.name);
+      SoundService.cash();
       if (!mounted) return;
       context.pushReplacement('/orders/${order.id}');
       if (print) {
@@ -125,9 +128,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             MaterialPageRoute(builder: (_) => InvoiceScreen(order: order)));
       }
     } catch (e) {
+      debugPrint('CREATE-ORDER ERROR: $e');
       if (mounted) {
         setState(() => _busy = false);
-        toast(context, 'Lỗi tạo đơn: $e');
+        toast(
+            context,
+            friendlyError(e,
+                fallback: 'Tạo đơn không thành công. Thử lại giúp tôi.'));
       }
     }
   }
@@ -617,11 +624,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('Trạng thái thanh toán',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-            ),
+            const SheetHeader('Trạng thái thanh toán'),
             for (final s in options)
               ListTile(
                 title: Text(paymentStatusUi(s).label,
@@ -654,12 +657,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Text('Sản phẩm (${items.length})',
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w700)),
-              ),
+              SheetHeader('Sản phẩm (${items.length})'),
               Flexible(
                 child: ListView(
                   shrinkWrap: true,

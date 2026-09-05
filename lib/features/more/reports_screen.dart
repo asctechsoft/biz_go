@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
+import '../../core/error_text.dart';
 import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../models/customer.dart';
-import '../../models/fleet.dart';
 import '../../models/order.dart';
 import '../../models/payment.dart';
 import '../../services/db.dart';
@@ -67,7 +67,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final range = _range();
     toast(context, 'Đang tạo Excel ($_periodLabel)...');
     try {
-      final orders = await db.orders().first;
+      // Báo cáo phải quét cả đơn cũ — người dùng tự chọn khoảng thời gian.
+      final orders = await db.allOrders().first;
       final customers = await db.customers().first;
       await ExcelExport.exportReport(
         orders: orders,
@@ -76,7 +77,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
         to: range.end,
       );
     } catch (e) {
-      if (context.mounted) toast(context, 'Lỗi xuất Excel: $e');
+      debugPrint('EXPORT-EXCEL ERROR: $e');
+      if (context.mounted) {
+        toast(
+            context,
+            friendlyError(e,
+                fallback: 'Xuất Excel không thành công. Thử lại giúp tôi.'));
+      }
     }
   }
 
@@ -96,7 +103,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ],
       ),
       body: StreamBuilder<List<Order>>(
-        stream: db.orders(),
+        stream: db.allOrders(),
         builder: (context, snap) {
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -215,11 +222,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   const SizedBox(height: 8),
                   _DebtByCustomer(db: db),
                   const SizedBox(height: 20),
-                  const Text('Hiệu suất chuyến xe',
+                  const Text('Hiệu suất giao hàng',
                       style:
                           TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
-                  _TripStats(db: db),
+                  _DeliveryStats(orders: active),
                   const SizedBox(height: 24),
                 ],
               );
@@ -415,34 +422,43 @@ class _DebtByCustomer extends StatelessWidget {
   }
 }
 
-class _TripStats extends StatelessWidget {
-  final Db db;
-  const _TripStats({required this.db});
+/// Hiệu suất giao hàng trong kỳ đang xem — tính thẳng trên đơn (không còn
+/// chuyến xe để lấy `orderCount`/`deliveredCount`).
+class _DeliveryStats extends StatelessWidget {
+  final List<Order> orders;
+  const _DeliveryStats({required this.orders});
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Trip>>(
-      stream: db.trips(),
-      builder: (context, snap) {
-        final trips = snap.data ?? [];
-        final totalOrders = trips.fold<int>(0, (s, t) => s + t.orderCount);
-        final delivered = trips.fold<int>(0, (s, t) => s + t.deliveredCount);
-        final rate =
-            totalOrders == 0 ? 0 : (delivered * 100 / totalOrders).round();
-        return SectionCard(
-          child: Column(
-            children: [
-              KVRow('Số chuyến', '${trips.length}'),
-              KVRow('Tổng đơn giao', '$totalOrders'),
-              KVRow('Giao thành công', '$delivered'),
-              KVRow('Tỷ lệ thành công', '$rate%',
-                  valueColor:
-                      rate >= 80 ? AppColors.success : AppColors.warning,
-                  bold: true),
-            ],
-          ),
-        );
-      },
+    // Chỉ tính đơn đã rời kho — đơn còn nằm chờ không phải "giao trượt".
+    const shipped = {
+      DeliveryStatus.ON_THE_WAY,
+      DeliveryStatus.ARRIVED,
+      DeliveryStatus.DELIVERED,
+      DeliveryStatus.FAILED,
+      DeliveryStatus.RETURNED,
+    };
+    final out = orders.where((o) => shipped.contains(o.deliveryStatus)).toList();
+    final delivered = out
+        .where((o) => o.deliveryStatus == DeliveryStatus.DELIVERED)
+        .length;
+    final failed = out
+        .where((o) =>
+            o.deliveryStatus == DeliveryStatus.FAILED ||
+            o.deliveryStatus == DeliveryStatus.RETURNED)
+        .length;
+    final rate = out.isEmpty ? 0 : (delivered * 100 / out.length).round();
+    return SectionCard(
+      child: Column(
+        children: [
+          KVRow('Đơn đã xuất phát', '${out.length}'),
+          KVRow('Giao thành công', '$delivered'),
+          KVRow('Thất bại / hoàn hàng', '$failed'),
+          KVRow('Tỷ lệ thành công', '$rate%',
+              valueColor: rate >= 80 ? AppColors.success : AppColors.warning,
+              bold: true),
+        ],
+      ),
     );
   }
 }

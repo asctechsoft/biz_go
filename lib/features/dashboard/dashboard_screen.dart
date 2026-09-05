@@ -41,15 +41,17 @@ class DashboardScreen extends StatelessWidget {
           final now = DateTime.now();
           final yest = now.subtract(const Duration(days: 1));
 
-          final today = orders
-              .where((o) => _sameDay(o.createdAt, now))
-              .toList();
-          final yesterday = orders
-              .where((o) => _sameDay(o.createdAt, yest))
-              .toList();
           final active = orders.where(
             (o) => o.orderStatus != OrderStatus.CANCELLED,
           );
+          // Đơn huỷ KHÔNG tính vào số đơn lẫn doanh thu — đơn đã huỷ thì
+          // không bán được đồng nào.
+          final today = active
+              .where((o) => _sameDay(o.createdAt, now))
+              .toList();
+          final yesterday = active
+              .where((o) => _sameDay(o.createdAt, yest))
+              .toList();
 
           final revenueToday = today.fold<int>(0, (s, o) => s + o.total);
           final revenueYest = yesterday.fold<int>(0, (s, o) => s + o.total);
@@ -196,15 +198,6 @@ class _Header extends StatelessWidget {
               ),
             ),
             _BellButton(db: db, role: role),
-            const SizedBox(width: 12),
-            Container(
-              padding: const EdgeInsets.all(2),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-              child: Avatar(name, size: 44),
-            ),
           ],
         ),
       ),
@@ -228,48 +221,50 @@ class _BellButton extends StatelessWidget {
         final unread = (snap.data ?? []).where((n) => !n.read).length;
         return GestureDetector(
           onTap: () => context.push('/notifications'),
-          child: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(
+          // Badge neo theo VIỀN VÒNG TRÒN trắng, không neo theo icon chuông.
+          // Neo theo icon thì số đè lên đúng thân chuông, che mất hình.
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
                   Icons.notifications_none,
                   color: AppColors.primary,
                   size: 22,
                 ),
-                if (unread > 0)
-                  Positioned(
-                    right: -5,
-                    top: -5,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      constraints: const BoxConstraints(
-                        minWidth: 16,
-                        minHeight: 16,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.danger,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1.5),
-                      ),
-                      child: Text(
-                        '${unread > 9 ? '9+' : unread}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                        ),
+              ),
+              if (unread > 0)
+                Positioned(
+                  right: -4,
+                  top: -4,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Text(
+                      '${unread > 9 ? '9+' : unread}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         );
       },
@@ -303,14 +298,14 @@ class _StatRow extends StatelessWidget {
             color: AppColors.primary,
             label: 'Đơn hôm nay',
             value: '$todayCount',
-            trend: _pct(todayCount, yestCount),
+            trend: _diff(todayCount, yestCount, money_: false),
           ),
           _StatCard(
             icon: Icons.bar_chart,
             color: AppColors.info,
             label: 'Doanh thu',
             value: money(revenueToday),
-            trend: _pct(revenueToday, revenueYest),
+            trend: _diff(revenueToday, revenueYest, money_: true),
           ),
           _StatCard(
             icon: Icons.local_shipping,
@@ -329,10 +324,32 @@ class _StatRow extends StatelessWidget {
     );
   }
 
-  double? _pct(int today, int yest) {
-    if (yest <= 0) return today > 0 ? 100 : null;
-    return (today - yest) * 100 / yest;
+  /// Chênh lệch so với hôm qua, dạng chữ đọc được ngay.
+  ///
+  /// KHÔNG dùng phần trăm: cửa hàng chỉ vài đơn/ngày nên nền so sánh quá nhỏ,
+  /// hôm qua 1 đơn hôm nay 5 đơn là ra "+400%" — đúng toán nhưng vô nghĩa với
+  /// người đọc. Số tuyệt đối ("thêm 4 đơn") hiểu được ngay.
+  _Trend? _diff(int today, int yest, {required bool money_}) {
+    final d = today - yest;
+    if (d == 0) return const _Trend('Bằng hôm qua', 0);
+    final amount = money_ ? money(d.abs()) : '${d.abs()} đơn';
+    return _Trend('$amount so với hôm qua', d);
   }
+}
+
+/// Dòng so sánh với hôm qua trên thẻ số liệu.
+class _Trend {
+  final String text;
+
+  /// Chênh lệch thô — quyết định mũi tên lên/xuống và màu. 0 = bằng hôm qua.
+  final int delta;
+  const _Trend(this.text, this.delta);
+
+  Color get color => switch (delta) {
+        > 0 => AppColors.success,
+        < 0 => AppColors.danger,
+        _ => AppColors.textSecondary,
+      };
 }
 
 class _StatCard extends StatelessWidget {
@@ -340,7 +357,7 @@ class _StatCard extends StatelessWidget {
   final Color color;
   final String label;
   final String value;
-  final double? trend;
+  final _Trend? trend;
   const _StatCard({
     required this.icon,
     required this.color,
@@ -402,19 +419,22 @@ class _StatCard extends StatelessWidget {
           if (trend != null)
             Row(
               children: [
-                Icon(
-                  trend! >= 0 ? Icons.arrow_upward : Icons.arrow_downward,
-                  size: 12,
-                  color: trend! >= 0 ? AppColors.success : AppColors.danger,
-                ),
-                const SizedBox(width: 2),
-                Text(
-                  '${trend!.abs().toStringAsFixed(0)}% so với hôm qua',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: trend! >= 0 ? AppColors.success : AppColors.danger,
+                if (trend!.delta != 0) ...[
+                  Icon(
+                    trend!.delta > 0
+                        ? Icons.arrow_upward
+                        : Icons.arrow_downward,
+                    size: 12,
+                    color: trend!.color,
+                  ),
+                  const SizedBox(width: 2),
+                ],
+                Expanded(
+                  child: Text(
+                    trend!.text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10, color: trend!.color),
                   ),
                 ),
               ],
@@ -802,12 +822,17 @@ class _TodoCard extends StatelessWidget {
               o.orderStatus != OrderStatus.CANCELLED,
         )
         .length;
-    final loading = orders
+    // Đã đóng hàng, chờ bấm "Xuất phát".
+    final waitingDepart = orders
         .where(
           (o) =>
               o.warehouseStatus == WarehouseStatus.PACKED &&
-              o.tripId == null &&
-              o.orderStatus != OrderStatus.CANCELLED,
+              o.orderStatus != OrderStatus.CANCELLED &&
+              o.deliveryStatus != DeliveryStatus.ON_THE_WAY &&
+              o.deliveryStatus != DeliveryStatus.ARRIVED &&
+              o.deliveryStatus != DeliveryStatus.DELIVERED &&
+              o.deliveryStatus != DeliveryStatus.FAILED &&
+              o.deliveryStatus != DeliveryStatus.RETURNED,
         )
         .length;
     final debtCount = orders
@@ -859,8 +884,8 @@ class _TodoCard extends StatelessWidget {
                   context,
                   Icons.local_shipping,
                   AppColors.info,
-                  'Đơn chờ xếp xe',
-                  loading,
+                  'Đơn chờ xuất phát',
+                  waitingDepart,
                   '/delivery',
                 ),
                 _todo(

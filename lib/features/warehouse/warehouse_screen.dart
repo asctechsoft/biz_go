@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
 import '../../core/formatters.dart';
+import '../../core/permissions.dart';
 import '../../models/order.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/db.dart';
 import '../../widgets/common.dart';
+import '../delivery/delivery_actions.dart';
 
 class WarehouseScreen extends StatelessWidget {
   const WarehouseScreen({super.key});
@@ -14,6 +17,9 @@ class WarehouseScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final db = context.read<Db>();
+    final role = context.watch<AuthProvider>().user?.role;
+    // Đóng hàng xong là cho đi luôn — không còn bước xếp chuyến.
+    final canDepart = role != null && Perm.startDelivery(role);
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -32,18 +38,29 @@ class WarehouseScreen extends StatelessWidget {
             tabs: [
               Tab(text: 'Chờ chuẩn bị'),
               Tab(text: 'Chuẩn bị'),
-              Tab(text: 'Đã đóng'),
+              Tab(text: 'Chờ xuất phát'),
             ],
           ),
         ),
         body: StreamBuilder<List<Order>>(
-          stream: db.orders(),
+          // Kho nhìn việc tồn: nới rộng hơn tab Đơn hàng để đơn kẹt lâu
+          // không bị rơi khỏi tầm mắt.
+          stream: db.orders(days: 90),
           builder: (context, snap) {
             if (!snap.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
             final all = snap.data!
                 .where((o) => o.orderStatus != OrderStatus.CANCELLED)
+                .toList();
+            // Đã đóng hàng mà CHƯA lên đường — đây là lô chờ bấm "Xuất phát".
+            final packed = all
+                .where((o) =>
+                    o.warehouseStatus == WarehouseStatus.PACKED &&
+                    (o.deliveryStatus == DeliveryStatus.WAITING_ASSIGNMENT ||
+                        o.deliveryStatus == DeliveryStatus.ASSIGNED ||
+                        o.deliveryStatus == DeliveryStatus.LOADING ||
+                        o.deliveryStatus == DeliveryStatus.RESCHEDULED))
                 .toList();
             return TabBarView(
               children: [
@@ -57,8 +74,7 @@ class WarehouseScreen extends StatelessWidget {
                             o.warehouseStatus == WarehouseStatus.PREPARED ||
                             o.warehouseStatus == WarehouseStatus.PACKING)
                         .toList()),
-                _list(context,
-                    all.where((o) => o.warehouseStatus == WarehouseStatus.PACKED).toList()),
+                _packedList(context, packed, canDepart),
               ],
             );
           },
@@ -87,6 +103,60 @@ class WarehouseScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  /// Tab "Chờ xuất phát" — mỗi đơn có nút đi riêng, dưới cùng là nút đi cả lô.
+  Widget _packedList(
+      BuildContext context, List<Order> orders, bool canDepart) {
+    if (orders.isEmpty) {
+      return const EmptyState(text: 'Không có đơn nào chờ xuất phát');
+    }
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: orders.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, i) {
+              final o = orders[i];
+              return Card(
+                child: ListTile(
+                  onTap: () => context.push('/orders/${o.id}'),
+                  title: Text(o.code,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(
+                      '${o.customerName}\n${o.packageCode ?? ''} · ${fmtWeight(o.weightKg, o.weightUnit)}'),
+                  isThreeLine: true,
+                  trailing: canDepart
+                      ? FilledButton(
+                          onPressed: () => departOrder(context, o),
+                          child: const Text('Xuất phát'),
+                        )
+                      : StatusChip(deliveryStatusUi(o.deliveryStatus),
+                          dense: true),
+                ),
+              );
+            },
+          ),
+        ),
+        if (canDepart)
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => departAllOrders(context, orders),
+                  icon: const Icon(Icons.local_shipping),
+                  label: Text('Xuất phát tất cả (${orders.length} đơn)'),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

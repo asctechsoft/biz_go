@@ -14,13 +14,14 @@ class AuditLogScreen extends StatelessWidget {
   static String _entityLabel(String t) => switch (t) {
         'order' => 'Đơn hàng',
         'payment' => 'Thanh toán',
-        'trip' => 'Chuyến xe',
         'customer' => 'Khách hàng',
         'product' => 'Sản phẩm',
         'packaging' => 'Quy cách',
         'category' => 'Danh mục',
-        'vehicle' => 'Xe',
         'user' => 'Người dùng',
+        // legacy — chuyến xe/xe đã bỏ, nhật ký cũ vẫn cần nhãn để đọc được
+        'trip' => 'Chuyến xe',
+        'vehicle' => 'Xe',
         _ => t,
       };
 

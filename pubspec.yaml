@@ -47,6 +47,12 @@ dependencies:
   excel: ^4.0.6
   share_plus: ^10.1.4
 
+  # Âm thanh phản hồi thao tác (tạo đơn, giao thành công, noti bắn về)
+  audioplayers: ^6.1.0
+
+  # Xuất phiếu giao hàng ra PDF (thuần Dart, không có native plugin)
+  pdf: ^3.11.1
+
   # Đăng nhập sinh trắc học (vân tay) + lưu thông tin đăng nhập an toàn
   local_auth: ^2.3.0
   flutter_secure_storage: ^9.2.4
@@ -70,3 +76,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    - assets/audio/
+    - assets/fonts/

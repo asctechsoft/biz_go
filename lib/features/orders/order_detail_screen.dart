@@ -9,6 +9,7 @@ import '../../models/order.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/db.dart';
 import '../../widgets/common.dart';
+import '../delivery/delivery_actions.dart';
 import 'invoice_screen.dart';
 import 'payment_sheet.dart';
 
@@ -34,13 +35,25 @@ class OrderDetailScreen extends StatelessWidget {
               Builder(builder: (context) {
                 final role = context.read<AuthProvider>().user?.role;
                 final items = <PopupMenuEntry<String>>[
-                  if (role != null && Perm.printInvoice(role))
+                  if (role != null && Perm.createOrder(role))
+                    PopupMenuItem(
+                      value: 'priority',
+                      child: Text(o.priority
+                          ? 'Bỏ đánh dấu GẤP'
+                          : 'Đánh dấu GẤP'),
+                    ),
+                  if (role != null && Perm.printInvoice(role)) ...[
                     const PopupMenuItem(value: 'print', child: Text('In phiếu')),
+                    const PopupMenuItem(value: 'pdf', child: Text('Tải PDF')),
+                  ],
                   if (role != null && Perm.cancelOrder(role))
                     const PopupMenuItem(value: 'cancel', child: Text('Hủy đơn')),
                 ];
                 if (items.isEmpty) return const SizedBox.shrink();
                 return PopupMenuButton<String>(
+                  // Mặc định menu bung đè lên chính nút bấm, che mất header.
+                  // `under` đẩy nó xuống dưới AppBar.
+                  position: PopupMenuPosition.under,
                   onSelected: (v) => _onMenu(context, db, o, v),
                   itemBuilder: (_) => items,
                 );
@@ -58,6 +71,24 @@ class OrderDetailScreen extends StatelessWidget {
                   children: [
                     Row(
                       children: [
+                        if (o.priority &&
+                            o.orderStatus != OrderStatus.CANCELLED) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.danger,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text('GẤP',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: .5)),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
                         StatusChip(orderStatusUi(o.orderStatus), dense: true),
                         const SizedBox(width: 6),
                         StatusChip(paymentStatusUi(o.paymentStatus), dense: true),
@@ -139,41 +170,25 @@ class OrderDetailScreen extends StatelessWidget {
     if (v == 'print') {
       Navigator.push(context,
           MaterialPageRoute(builder: (_) => InvoiceScreen(order: o)));
+    } else if (v == 'priority') {
+      final on = !o.priority;
+      await db.setOrderPriority(o, on,
+          actorId: user.id, actorName: user.name);
+      if (context.mounted) {
+        toast(context, on ? 'Đã đánh dấu đơn GẤP' : 'Đã bỏ đánh dấu GẤP');
+      }
+    } else if (v == 'pdf') {
+      // Lấy tiêu đề + SĐT hiện hành để phiếu PDF khớp với bản xem trước.
+      final shop = await db.shopInfo().first;
+      if (context.mounted) await downloadInvoicePdf(context, o, shop);
     } else if (v == 'cancel') {
-      final reason = await _askReason(context, 'Lý do hủy đơn');
+      final reason = await askReason(context, 'Lý do hủy đơn');
       if (reason != null) {
         await db.cancelOrder(o, reason, user.name, actorId: user.id);
         if (context.mounted) toast(context, 'Đã hủy đơn');
       }
     }
   }
-}
-
-Future<String?> _askReason(BuildContext context, String title) async {
-  final c = TextEditingController();
-  return showDialog<String>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(title),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: TextField(
-            controller: c,
-            autofocus: true,
-            decoration: const InputDecoration(hintText: 'Nhập lý do')),
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(minimumSize: const Size(80, 40)),
-          onPressed: () => Navigator.pop(
-              ctx, c.text.trim().isEmpty ? 'Không rõ' : c.text.trim()),
-          child: const Text('Xác nhận'),
-        ),
-      ],
-    ),
-  );
 }
 
 class _Stepper extends StatelessWidget {
@@ -183,6 +198,7 @@ class _Stepper extends StatelessWidget {
   int get _stage {
     final o = order;
     if (o.deliveryStatus == DeliveryStatus.DELIVERED) return 4;
+    // Đã rời kho (kể cả trạng thái legacy của luồng chuyến xe cũ).
     if (o.deliveryStatus.index >= DeliveryStatus.ASSIGNED.index &&
         o.deliveryStatus != DeliveryStatus.WAITING_ASSIGNMENT) return 3;
     if (o.warehouseStatus == WarehouseStatus.PACKED) return 2;
@@ -344,29 +360,36 @@ class _ActionBar extends StatelessWidget {
       }
     }
 
-    // Delivery flow (once on a trip) — Giao hàng / Chủ.
-    if (Perm.deliveryOps(role)) {
-      if (o.deliveryStatus == DeliveryStatus.ON_THE_WAY) {
-        add('Đã tới', () => db.markArrived(o, user.id, user.name),
-            primary: false);
-      }
-      if (o.deliveryStatus == DeliveryStatus.ARRIVED ||
-          o.deliveryStatus == DeliveryStatus.ON_THE_WAY) {
-        add('Giao thành công',
-            () => _deliverFlow(context, db, o, user.id, user.name));
-        add('Không giao được',
-            () => _failFlow(context, db, o, user.id, user.name),
-            primary: false);
-      }
+    // Đóng hàng xong → cho đi. Chủ + Kiểm hàng (KHÔNG còn bước xếp chuyến).
+    const waitingDepart = {
+      DeliveryStatus.WAITING_ASSIGNMENT,
+      DeliveryStatus.ASSIGNED, // legacy
+      DeliveryStatus.LOADING, // legacy
+      DeliveryStatus.RESCHEDULED,
+    };
+    if (Perm.startDelivery(role) &&
+        o.warehouseStatus == WarehouseStatus.PACKED &&
+        waitingDepart.contains(o.deliveryStatus)) {
+      add('Xuất phát', () => departOrder(context, o));
     }
 
-    // Thu công nợ còn lại — Chủ / Kiểm hàng / Giao hàng.
-    // KHÔNG thu khi: đang ở điểm giao (ARRIVED), đơn đã hủy, hoặc giao
-    // không thành công (FAILED/RETURNED — hàng hoàn, khách chưa nhận).
+    // Đối soát cuối ngày — CHỈ Chủ.
+    if (Perm.confirmDelivery(role) &&
+        (o.deliveryStatus == DeliveryStatus.ON_THE_WAY ||
+            o.deliveryStatus == DeliveryStatus.ARRIVED)) {
+      add(
+        'Giao thành công',
+        () => deliverOrder(context, o, onDone: () => Navigator.pop(context)),
+      );
+      add('Không giao được', () => failOrder(context, o), primary: false);
+    }
+
+    // Thu công nợ còn lại — chỉ Chủ.
+    // KHÔNG thu khi đơn đã hủy hoặc giao không thành công (FAILED/RETURNED —
+    // hàng hoàn, khách chưa nhận).
     const noCollect = {
       DeliveryStatus.FAILED,
       DeliveryStatus.RETURNED,
-      DeliveryStatus.ARRIVED,
     };
     if (Perm.collectPayment(role) &&
         o.remaining > 0 &&
@@ -496,7 +519,7 @@ class _ActionBar extends StatelessWidget {
           weightKg: value * weightUnits[unit]!.toDouble(),
           weightUnit: unit,
           note: noteC.text.trim());
-      if (context.mounted) toast(context, 'Đã đóng hàng, chờ xếp chuyến');
+      if (context.mounted) toast(context, 'Đã đóng hàng, chờ xuất phát');
     }
   }
 
@@ -505,24 +528,6 @@ class _ActionBar extends StatelessWidget {
   static double? _parseWeight(String s) {
     final v = double.tryParse(s.trim().replaceAll(',', '.'));
     return (v == null || v <= 0) ? null : v;
-  }
-
-  Future<void> _deliverFlow(BuildContext context, Db db, Order o, String uid,
-      String uname) async {
-    final result = await showPaymentSheet(context, o);
-    if (result == null) return;
-    await db.markDelivered(
-      order: o,
-      collected: result.amount,
-      method: result.method,
-      actorId: uid,
-      actorName: uname,
-      note: result.note,
-    );
-    if (context.mounted) {
-      toast(context, 'Đã giao thành công');
-      Navigator.pop(context); // quay lại màn trước (chi tiết chuyến)
-    }
   }
 
   Future<void> _collectFlow(BuildContext context, Db db, Order o, String uid,
@@ -538,45 +543,5 @@ class _ActionBar extends StatelessWidget {
       note: result.note,
     );
     if (context.mounted) toast(context, 'Đã ghi nhận thu tiền');
-  }
-
-  Future<void> _failFlow(BuildContext context, Db db, Order o, String uid,
-      String uname) async {
-    final choice = await showModalBottomSheet<DeliveryStatus>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.cancel, color: AppColors.danger),
-              title: const Text('Giao thất bại'),
-              onTap: () => Navigator.pop(ctx, DeliveryStatus.FAILED),
-            ),
-            ListTile(
-              leading: const Icon(Icons.schedule, color: AppColors.warning),
-              title: const Text('Hẹn giao lại'),
-              onTap: () => Navigator.pop(ctx, DeliveryStatus.RESCHEDULED),
-            ),
-            ListTile(
-              leading: const Icon(Icons.keyboard_return),
-              title: const Text('Hoàn hàng về kho'),
-              onTap: () => Navigator.pop(ctx, DeliveryStatus.RETURNED),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (choice == null || !context.mounted) return;
-    final reason = await _askReason(context, 'Lý do');
-    if (reason == null) return;
-    await db.markDeliveryFailed(
-      order: o,
-      status: choice,
-      reason: reason,
-      actorId: uid,
-      actorName: uname,
-    );
-    if (context.mounted) toast(context, 'Đã cập nhật');
   }
 }

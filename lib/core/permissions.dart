@@ -1,10 +1,9 @@
 import 'enums.dart';
 
-/// RBAC (§3):
-/// - Chủ (owner): toàn quyền.
-/// - Kiểm hàng (checker): xem đơn hàng + giao hàng + tạo/xếp chuyến + kho/in.
-/// - Kiểm kho (warehouse): thao tác kho + xem đơn.
-/// - Giao hàng (shipper): CHỈ giao hàng (chuyến của mình, giao, thu COD).
+/// RBAC (§3) — luồng KHÔNG có tài xế:
+/// - Chủ (owner): toàn quyền. Là người duy nhất đối soát giao hàng + thu tiền.
+/// - Kiểm hàng (checker): kho/đóng hàng/in phiếu + bấm "Xuất phát" cho đơn.
+/// - Kiểm kho (warehouse): chỉ thao tác kho + xem đơn.
 class Perm {
   static bool owner(UserRole r) => r == UserRole.owner;
 
@@ -13,7 +12,6 @@ class Perm {
   static bool editCatalog(UserRole r) => r == UserRole.owner; // sản phẩm/giá
   static bool manageCustomers(UserRole r) => r == UserRole.owner;
   static bool viewReports(UserRole r) => r == UserRole.owner;
-  static bool manageFleet(UserRole r) => r == UserRole.owner;
   static bool manageUsers(UserRole r) => r == UserRole.owner;
   static bool viewAudit(UserRole r) => r == UserRole.owner;
   static bool cancelOrder(UserRole r) => r == UserRole.owner;
@@ -28,21 +26,17 @@ class Perm {
       r == UserRole.checker ||
       r == UserRole.warehouse;
 
-  // Tạo/xếp chuyến — Chủ + Kiểm hàng (KHÔNG có shipper).
-  static bool dispatchOps(UserRole r) =>
+  /// Bấm "Xuất phát" — đơn đã đóng hàng → Đang giao. Chủ + Kiểm hàng.
+  /// Kiểm kho soạn/đóng hàng thôi, không quyết định cho hàng đi.
+  static bool startDelivery(UserRole r) =>
       r == UserRole.owner || r == UserRole.checker;
-  // Bấm "Xuất phát" chuyến — chỉ tài xế (shipper) + Chủ. Kiểm hàng KHÔNG.
-  static bool startTrip(UserRole r) =>
-      r == UserRole.owner || r == UserRole.shipper;
-  // Giao hàng (giao đơn, thu COD) — Chủ + Kiểm hàng + Giao hàng.
-  static bool deliveryOps(UserRole r) =>
-      r == UserRole.owner ||
-      r == UserRole.checker ||
-      r == UserRole.shipper;
-  static bool collectPayment(UserRole r) =>
-      r == UserRole.owner ||
-      r == UserRole.checker ||
-      r == UserRole.shipper;
+
+  /// Đối soát cuối ngày: đánh dấu giao thành công / không giao được.
+  /// **Chỉ Chủ** — đây là bước chốt tiền.
+  static bool confirmDelivery(UserRole r) => r == UserRole.owner;
+
+  /// Thu tiền (COD lúc đối soát + thu công nợ). **Chỉ Chủ**.
+  static bool collectPayment(UserRole r) => r == UserRole.owner;
 
   /// Tab hiện ở bottom nav theo vai trò.
   static List<String> tabs(UserRole r) => switch (r) {
@@ -59,7 +53,6 @@ class Perm {
             '/more'
           ],
         UserRole.warehouse => const ['/dashboard', '/orders', '/more'],
-        UserRole.shipper => const ['/delivery', '/more'],
       };
 
   /// Route đầu tiên hợp lệ — dùng khi redirect sau đăng nhập.
@@ -73,25 +66,17 @@ class Perm {
       return p('/dashboard') ||
           p('/orders') ||
           p('/delivery') ||
-          p('/trips') ||
           p('/warehouse') ||
           p('/more') ||
           p('/notifications') ||
           p('/filter');
     }
-    if (r == UserRole.warehouse) {
-      return p('/dashboard') ||
-          p('/orders') ||
-          p('/warehouse') ||
-          p('/more') ||
-          p('/notifications') ||
-          p('/filter');
-    }
-    // shipper — chỉ giao hàng
-    return p('/delivery') ||
-        p('/trips') ||
+    // warehouse — kho + xem đơn
+    return p('/dashboard') ||
         p('/orders') ||
+        p('/warehouse') ||
         p('/more') ||
-        p('/notifications');
+        p('/notifications') ||
+        p('/filter');
   }
 }

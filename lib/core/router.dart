@@ -9,10 +9,8 @@ import '../features/dashboard/dashboard_screen.dart';
 import '../features/dashboard/notifications_screen.dart';
 import '../features/dashboard/quick_filter_screen.dart';
 import '../features/delivery/delivery_hub_screen.dart';
-import '../features/delivery/trip_detail_screen.dart';
-import '../features/delivery/trip_create_screen.dart';
-import '../features/fleet/fleet_screen.dart';
 import '../features/more/audit_log_screen.dart';
+import '../features/more/invoice_settings_screen.dart';
 import '../features/more/more_screen.dart';
 import '../features/more/reports_screen.dart';
 import '../features/more/user_management_screen.dart';
@@ -22,6 +20,7 @@ import '../features/orders/orders_screen.dart';
 import '../features/products/product_detail_screen.dart';
 import '../features/products/products_screen.dart';
 import '../features/warehouse/warehouse_screen.dart';
+import '../models/order_filter.dart';
 import '../providers/auth_provider.dart';
 import '../features/splash/splash_screen.dart';
 import '../shell/main_shell.dart';
@@ -91,7 +90,15 @@ GoRouter buildRouter(AuthProvider auth) {
         path: '/notifications',
         builder: (c, s) => const NotificationsScreen(),
       ),
-      GoRoute(path: '/filter', builder: (c, s) => const QuickFilterScreen()),
+      GoRoute(
+        path: '/filter',
+        // `extra` = bộ lọc đang áp dụng, để mở lên thấy đúng thứ đang lọc.
+        builder: (c, s) => QuickFilterScreen(
+          initial: s.extra is OrderFilter
+              ? s.extra as OrderFilter
+              : OrderFilter.empty,
+        ),
+      ),
       GoRoute(
         path: '/orders/create',
         builder: (c, s) => const CreateOrderScreen(),
@@ -116,15 +123,13 @@ GoRouter buildRouter(AuthProvider auth) {
             ProductDetailScreen(productId: s.pathParameters['id']!),
       ),
       GoRoute(path: '/warehouse', builder: (c, s) => const WarehouseScreen()),
-      GoRoute(path: '/trips/new', builder: (c, s) => const TripCreateScreen()),
-      GoRoute(
-        path: '/trips/:id',
-        builder: (c, s) => TripDetailScreen(tripId: s.pathParameters['id']!),
-      ),
       GoRoute(path: '/reports', builder: (c, s) => const ReportsScreen()),
-      GoRoute(path: '/fleet', builder: (c, s) => const FleetScreen()),
       GoRoute(path: '/users', builder: (c, s) => const UserManagementScreen()),
       GoRoute(path: '/audit', builder: (c, s) => const AuditLogScreen()),
+      GoRoute(
+        path: '/invoice-settings',
+        builder: (c, s) => const InvoiceSettingsScreen(),
+      ),
     ],
   );
 }

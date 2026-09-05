@@ -76,7 +76,7 @@ class AuthService {
       }
 
       // Không có hồ sơ → tài khoản đã bị Chủ xoá (hoặc tạo ngoài app). KHÔNG
-      // tự tạo hồ sơ shipper: làm vậy thì nút Xoá ở Quản lý người dùng vô
+      // tự tạo hồ sơ mặc định: làm vậy thì nút Xoá ở Quản lý người dùng vô
       // nghĩa — người bị xoá đăng nhập lại là hồ sơ mọc lại ngay.
       if (profile == null) {
         await _auth.signOut();
@@ -126,6 +126,8 @@ class AuthService {
   }
 
   /// Chỉ cho phép "mọc" tài khoản Chủ từ số demo khi hệ thống chưa có Chủ nào.
+  /// Hệ thống VẪN cho nhiều Chủ — nhưng Chủ thứ hai phải do Chủ hiện tại tạo
+  /// qua Quản lý người dùng, không phải ai biết số demo cũng tự dựng được.
   /// KHÔNG tự `signOut` — caller dọn dẹp (xoá account vừa tạo) rồi mới thoát,
   /// vì `currentUser` phải còn để xoá được.
   Future<void> _guardOwnerBootstrap(UserRole role, String uid) async {
@@ -298,7 +300,7 @@ class AuthService {
     return u;
   }
 
-  /// Chủ tạo tài khoản cho nhân viên/tài xế mà KHÔNG bị đăng xuất.
+  /// Chủ tạo tài khoản cho nhân viên (Kiểm hàng/Kiểm kho) mà KHÔNG bị đăng xuất.
   /// Dùng một FirebaseApp phụ để tạo user, xong huỷ app phụ.
   Future<AppUser> createUserAsAdmin({
     required String phone,
