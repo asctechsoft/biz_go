@@ -95,9 +95,11 @@ Chỉ có **một** tài khoản bootstrap: `0900000000` / `123456` (điền s�
 
 | Vai trò | Làm được |
 |---------|----------|
-| **Chủ** (owner) | toàn quyền. Người **duy nhất** đối soát giao hàng + thu tiền |
-| **Kiểm hàng** (checker) | kho/đóng hàng/in phiếu, xem đơn, bấm **Xuất phát** |
-| **Kiểm kho** (warehouse) | chỉ thao tác kho + xem đơn |
+| **Chủ** (owner) | toàn quyền. Người **duy nhất** xem Tổng quan (doanh thu) và đối soát giao hàng + thu tiền |
+| **Kiểm hàng** (checker) | kho/đóng hàng/in phiếu, xem đơn, bấm **Xuất phát**. KHÔNG thấy Tổng quan, KHÔNG thấy bất kỳ con số tiền nào |
+| **Kiểm kho** (warehouse) | chỉ thao tác kho + xem đơn. KHÔNG thấy Tổng quan, KHÔNG thấy tiền |
+
+> Ẩn tiền là ẩn **triệt để**: đơn giá, thành tiền, tổng cộng, đã thu, còn thiếu, trạng thái thanh toán — trong app lẫn trên **phiếu in**. Phiếu do nhân viên in ra chỉ có mặt hàng + số lượng + tổng số lượng.
 
 - **Có thể có nhiều Chủ** (2 người đồng sở hữu cùng quản 1 cửa hàng), nhưng hệ thống luôn giữ **ít nhất 1 Chủ** — không cho xoá/hạ cấp/khoá người cuối cùng. Chủ vào **Cài đặt → Quản lý người dùng** tạo tài khoản Chủ / Kiểm hàng / Kiểm kho; họ tự đăng nhập.
 - ⚠️ **Nhiều Chủ KHÔNG phải để tách 2 cơ sở.** App là single-tenant: một Firebase project = một cửa hàng, mọi Chủ nhìn chung một kho dữ liệu (đơn, khách, giá, công nợ, doanh thu). Bán cho 2 cơ sở khác nhau thì phải dựng **2 Firebase project riêng**.

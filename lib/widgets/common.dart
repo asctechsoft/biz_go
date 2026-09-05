@@ -178,6 +178,38 @@ Future<bool> confirmDialog(BuildContext context,
   return r ?? false;
 }
 
+/// Chọn **ngày + giờ** trong một lượt (date picker rồi time picker).
+///
+/// Trả `null` nếu người dùng huỷ ở bất kỳ bước nào — huỷ giữa chừng KHÔNG
+/// được coi là đã chọn, kẻo bấm nhầm là ghi đè mất giờ cũ.
+///
+/// Tiếng Việt + khung 24h do `MaterialApp` khoá sẵn (`locale: vi` +
+/// `alwaysUse24HourFormat`), ở đây không cần cấu hình lại.
+Future<DateTime?> pickDateTime(
+  BuildContext context, {
+  DateTime? initial,
+  String helpText = 'Chọn ngày',
+}) async {
+  final now = DateTime.now();
+  final base = initial ?? now;
+  final day = await showDatePicker(
+    context: context,
+    initialDate: base,
+    // Cho lùi 1 ngày phòng khi nhập bù đơn hôm qua; xa hơn thì vô nghĩa.
+    firstDate: DateTime(now.year, now.month, now.day - 1),
+    lastDate: DateTime(now.year + 1, now.month, now.day),
+    helpText: helpText,
+  );
+  if (day == null || !context.mounted) return null;
+  final time = await showTimePicker(
+    context: context,
+    initialTime: TimeOfDay.fromDateTime(base),
+    helpText: 'Chọn giờ',
+  );
+  if (time == null) return null;
+  return DateTime(day.year, day.month, day.day, time.hour, time.minute);
+}
+
 void toast(BuildContext context, String msg) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()

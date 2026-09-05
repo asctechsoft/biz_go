@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../core/enums.dart';
 import '../../core/formatters.dart';
 import '../../core/permissions.dart';
+import '../../core/theme.dart';
 import '../../models/order.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/db.dart';
@@ -61,7 +62,10 @@ class WarehouseScreen extends StatelessWidget {
                         o.deliveryStatus == DeliveryStatus.ASSIGNED ||
                         o.deliveryStatus == DeliveryStatus.LOADING ||
                         o.deliveryStatus == DeliveryStatus.RESCHEDULED))
-                .toList();
+                .toList()
+              // Cùng quy tắc với màn Giao hàng: GẤP lên đầu, rồi tới giờ dự
+              // kiến xuất phát. Hai màn xếp khác nhau là kho làm sai thứ tự.
+              ..sort(Order.byDepartOrder);
             return TabBarView(
               children: [
                 _list(context,
@@ -124,8 +128,30 @@ class WarehouseScreen extends StatelessWidget {
               return Card(
                 child: ListTile(
                   onTap: () => context.push('/orders/${o.id}'),
-                  title: Text(o.code,
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  title: Row(
+                    children: [
+                      Expanded(
+                        child: Text(o.code,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                      if (o.priority)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 6),
+                          child: Text('GẤP',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppColors.danger)),
+                        ),
+                      if (o.plannedDepartAt != null)
+                        Text(fmtDepartAt(o.plannedDepartAt),
+                            style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary)),
+                    ],
+                  ),
                   subtitle: Text(
                       '${o.customerName}\n${o.packageCode ?? ''} · ${fmtWeight(o.weightKg, o.weightUnit)}'),
                   isThreeLine: true,

@@ -94,16 +94,16 @@ class SeedService {
         note: 'Khách quen, giao giờ hành chính',
         addresses: [
           CustomerAddress(
-              label: 'Nhà riêng',
               receiver: 'Trần Thị Mai',
               phone: '0988123456',
               address: '25 Nguyễn Trãi, Hà Nội',
               isDefault: true),
           CustomerAddress(
-              label: 'Cửa hàng 1',
               receiver: 'Trần Thị Mai',
               phone: '0988123456',
-              address: '18 Trần Phú, Hà Nội'),
+              address: '18 Trần Phú, Hà Nội',
+              carrierName: 'Nhà xe Hoàng Long',
+              carrierPhone: '0912345678'),
         ],
       ),
       Customer(
@@ -112,7 +112,6 @@ class SeedService {
           phone: '0977888999',
           addresses: [
             CustomerAddress(
-                label: 'Nhà riêng',
                 receiver: 'Nguyễn Văn A',
                 phone: '0977888999',
                 address: '12 Láng Hạ, Hà Nội',
@@ -124,7 +123,6 @@ class SeedService {
           phone: '0966555444',
           addresses: [
             CustomerAddress(
-                label: 'Nhà riêng',
                 receiver: 'Lê Thị Hằng',
                 phone: '0966555444',
                 address: '56 Lê Lợi, Hà Nội',
@@ -136,7 +134,6 @@ class SeedService {
           phone: '0933222111',
           addresses: [
             CustomerAddress(
-                label: 'Nhà riêng',
                 receiver: 'Phạm Văn Cường',
                 phone: '0933222111',
                 address: '100 Phan Đình Phùng, Hà Nội',

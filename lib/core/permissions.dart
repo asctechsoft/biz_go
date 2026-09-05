@@ -12,6 +12,10 @@ class Perm {
   static bool editCatalog(UserRole r) => r == UserRole.owner; // sản phẩm/giá
   static bool manageCustomers(UserRole r) => r == UserRole.owner;
   static bool viewReports(UserRole r) => r == UserRole.owner;
+
+  /// Màn **Tổng quan** — doanh thu, biểu đồ, công nợ. Chỉ Chủ: nhân viên kho
+  /// không có việc gì với con số doanh thu.
+  static bool viewDashboard(UserRole r) => r == UserRole.owner;
   static bool manageUsers(UserRole r) => r == UserRole.owner;
   static bool viewAudit(UserRole r) => r == UserRole.owner;
   static bool cancelOrder(UserRole r) => r == UserRole.owner;
@@ -38,7 +42,19 @@ class Perm {
   /// Thu tiền (COD lúc đối soát + thu công nợ). **Chỉ Chủ**.
   static bool collectPayment(UserRole r) => r == UserRole.owner;
 
+  /// Được nhìn thấy **mọi con số tiền**: đơn giá, thành tiền, tổng cộng, đã
+  /// thu, còn thiếu — trong app lẫn trên phiếu in. **Chỉ Chủ.**
+  ///
+  /// Nhân viên kho chỉ cần biết mặt hàng và số lượng để soạn/đóng hàng; giá
+  /// bán là thông tin kinh doanh. Gate này phải áp ở TỪNG chỗ hiện tiền —
+  /// danh sách đơn, chi tiết đơn, màn giao hàng, phiếu xem trước và PDF —
+  /// chứ không có một chỗ chặn chung nào cả.
+  static bool viewMoney(UserRole r) => r == UserRole.owner;
+
   /// Tab hiện ở bottom nav theo vai trò.
+  ///
+  /// `/dashboard` chỉ có ở Chủ — [home] lấy tab đầu tiên, nên đăng nhập bằng
+  /// Kiểm hàng / Kiểm kho là vào thẳng màn Đơn hàng.
   static List<String> tabs(UserRole r) => switch (r) {
         UserRole.owner => const [
             '/dashboard',
@@ -46,13 +62,8 @@ class Perm {
             '/delivery',
             '/more'
           ],
-        UserRole.checker => const [
-            '/dashboard',
-            '/orders',
-            '/delivery',
-            '/more'
-          ],
-        UserRole.warehouse => const ['/dashboard', '/orders', '/more'],
+        UserRole.checker => const ['/orders', '/delivery', '/more'],
+        UserRole.warehouse => const ['/orders', '/more'],
       };
 
   /// Route đầu tiên hợp lệ — dùng khi redirect sau đăng nhập.
@@ -63,8 +74,7 @@ class Perm {
     if (r == UserRole.owner) return true;
     bool p(String x) => loc == x || loc.startsWith('$x/');
     if (r == UserRole.checker) {
-      return p('/dashboard') ||
-          p('/orders') ||
+      return p('/orders') ||
           p('/delivery') ||
           p('/warehouse') ||
           p('/more') ||
@@ -72,8 +82,7 @@ class Perm {
           p('/filter');
     }
     // warehouse — kho + xem đơn
-    return p('/dashboard') ||
-        p('/orders') ||
+    return p('/orders') ||
         p('/warehouse') ||
         p('/more') ||
         p('/notifications') ||

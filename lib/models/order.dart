@@ -28,6 +28,11 @@ class OrderItem {
 
   String get displayName => '$productName $packagingName';
 
+  /// Tên để phân biệt các dòng hàng cùng sản phẩm: chính là **phân loại**
+  /// ("Cùi bưởi tươi", "Cùi đẹp"...). Cùng một sản phẩm + quy cách có thể có
+  /// nhiều phân loại giá khác nhau, thiếu nó là mấy dòng trông y hệt nhau.
+  String get variantLabel => variantName.trim().isEmpty ? productName : variantName;
+
   factory OrderItem.fromMap(Map<String, dynamic> m) => OrderItem(
     productId: m['productId'] ?? '',
     variantId: m['variantId'] ?? '',
@@ -53,7 +58,7 @@ class OrderItem {
     'imagePath': imagePath,
   };
 
-  OrderItem copyWith({int? quantity}) => OrderItem(
+  OrderItem copyWith({int? quantity, int? unitPrice}) => OrderItem(
     productId: productId,
     variantId: variantId,
     packagingId: packagingId,
@@ -61,7 +66,7 @@ class OrderItem {
     variantName: variantName,
     packagingName: packagingName,
     quantity: quantity ?? this.quantity,
-    unitPrice: unitPrice,
+    unitPrice: unitPrice ?? this.unitPrice,
     imagePath: imagePath,
   );
 }
@@ -109,11 +114,15 @@ class Order {
   final String customerPhone;
 
   // Snapshot of delivery address (spec §6.2).
-  final String deliveryLabel;
   final String deliveryAddress;
   final String deliveryReceiver;
   final String deliveryPhone;
   final String deliveryMapUrl; // link Google Maps (snapshot lúc tạo đơn)
+
+  /// Nhà xe chở đơn này — **snapshot** lúc tạo đơn như địa chỉ. Khách đổi nhà
+  /// xe sau đó thì đơn cũ vẫn in đúng nhà xe đã gửi.
+  final String deliveryCarrierName;
+  final String deliveryCarrierPhone;
 
   final List<OrderItem> items;
 
@@ -127,6 +136,11 @@ class Order {
   final PaymentStatus paymentStatus;
 
   final int paidAmount; // tổng đã thu (từ payments)
+
+  /// Giờ **dự kiến xuất phát** do người tạo đơn đặt — dùng để xếp thứ tự đơn
+  /// nào đi trước. `null` = không đặt, khi đó xếp theo giờ tạo đơn (xem
+  /// [departAt]). KHÔNG phải giờ xuất phát thật: giờ thật nằm ở timeline.
+  final DateTime? plannedDepartAt;
 
   final String note; // ghi chú nội bộ
   final String deliveryNote; // ghi chú giao hàng
@@ -157,11 +171,12 @@ class Order {
     required this.customerId,
     required this.customerName,
     required this.customerPhone,
-    required this.deliveryLabel,
     required this.deliveryAddress,
     required this.deliveryReceiver,
     required this.deliveryPhone,
     this.deliveryMapUrl = '',
+    this.deliveryCarrierName = '',
+    this.deliveryCarrierPhone = '',
     required this.items,
     this.shippingFee = 0,
     this.discount = 0,
@@ -171,6 +186,7 @@ class Order {
     this.deliveryStatus = DeliveryStatus.WAITING_ASSIGNMENT,
     this.paymentStatus = PaymentStatus.UNPAID,
     this.paidAmount = 0,
+    this.plannedDepartAt,
     this.note = '',
     this.deliveryNote = '',
     this.cancelReason,
@@ -181,6 +197,20 @@ class Order {
     this.priority = false,
     this.timeline = const [],
   });
+
+  /// Có nhà xe chở hay giao thẳng — quyết định hiện dòng nhà xe trên phiếu.
+  bool get hasCarrier => deliveryCarrierName.trim().isNotEmpty;
+
+  /// Mốc dùng để xếp hàng đợi xuất phát: giờ đã đặt, không có thì giờ tạo đơn
+  /// (đặt trước đi trước). Có nó thì mọi chỗ sắp xếp dùng chung một quy tắc.
+  DateTime get departAt => plannedDepartAt ?? createdAt;
+
+  /// So sánh thứ tự đi: đơn **GẤP** luôn lên đầu, còn lại theo [departAt] tăng
+  /// dần. Dùng cho mọi danh sách hàng đợi (kho, giao hàng).
+  static int byDepartOrder(Order a, Order b) {
+    if (a.priority != b.priority) return a.priority ? -1 : 1;
+    return a.departAt.compareTo(b.departAt);
+  }
 
   // §7.2 money formulas
   int get subtotal => items.fold(0, (s, i) => s + i.lineTotal);
@@ -196,9 +226,10 @@ class Order {
     customerId: m['customerId'] ?? '',
     customerName: m['customerName'] ?? '',
     customerPhone: m['customerPhone'] ?? '',
-    deliveryLabel: m['deliveryLabel'] ?? '',
     deliveryAddress: m['deliveryAddress'] ?? '',
     deliveryMapUrl: m['deliveryMapUrl'] ?? '',
+    deliveryCarrierName: m['deliveryCarrierName'] ?? '',
+    deliveryCarrierPhone: m['deliveryCarrierPhone'] ?? '',
     deliveryReceiver: m['deliveryReceiver'] ?? '',
     deliveryPhone: m['deliveryPhone'] ?? '',
     items: ((m['items'] as List?) ?? [])
@@ -228,6 +259,9 @@ class Order {
       PaymentStatus.UNPAID,
     ),
     paidAmount: (m['paidAmount'] ?? 0) as int,
+    plannedDepartAt: m['plannedDepartAt'] == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(m['plannedDepartAt'] as int),
     note: m['note'] ?? '',
     deliveryNote: m['deliveryNote'] ?? '',
     cancelReason: m['cancelReason'],
@@ -247,9 +281,10 @@ class Order {
     'customerId': customerId,
     'customerName': customerName,
     'customerPhone': customerPhone,
-    'deliveryLabel': deliveryLabel,
     'deliveryAddress': deliveryAddress,
     'deliveryMapUrl': deliveryMapUrl,
+    'deliveryCarrierName': deliveryCarrierName,
+    'deliveryCarrierPhone': deliveryCarrierPhone,
     'deliveryReceiver': deliveryReceiver,
     'deliveryPhone': deliveryPhone,
     'items': items.map((e) => e.toMap()).toList(),
@@ -264,6 +299,7 @@ class Order {
     'paymentStatus': paymentStatus.name,
     'paidAmount': paidAmount,
     'remaining': remaining,
+    'plannedDepartAt': plannedDepartAt?.millisecondsSinceEpoch,
     'note': note,
     'deliveryNote': deliveryNote,
     'cancelReason': cancelReason,

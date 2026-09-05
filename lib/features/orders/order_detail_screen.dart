@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
+import '../../core/error_text.dart';
 import '../../core/formatters.dart';
 import '../../core/permissions.dart';
 import '../../core/theme.dart';
+import '../../models/app_user.dart';
 import '../../models/order.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/db.dart';
@@ -28,6 +30,9 @@ class OrderDetailScreen extends StatelessWidget {
               body: Center(child: CircularProgressIndicator()));
         }
         final o = snap.data!;
+        // Kho chỉ được thấy mặt hàng + số lượng; mọi con số tiền ẩn hết.
+        final role = context.watch<AuthProvider>().user?.role;
+        final showMoney = role != null && Perm.viewMoney(role);
         return Scaffold(
           appBar: AppBar(
             title: Text(o.code),
@@ -41,6 +46,17 @@ class OrderDetailScreen extends StatelessWidget {
                       child: Text(o.priority
                           ? 'Bỏ đánh dấu GẤP'
                           : 'Đánh dấu GẤP'),
+                    ),
+                  // Đổi giờ chỉ có nghĩa khi đơn chưa đi — đã lên đường thì
+                  // `Db.setPlannedDepart` cũng từ chối.
+                  if (role != null &&
+                      Perm.startDelivery(role) &&
+                      _canPlanDepart(o))
+                    PopupMenuItem(
+                      value: 'depart-time',
+                      child: Text(o.plannedDepartAt == null
+                          ? 'Đặt giờ xuất phát'
+                          : 'Đổi giờ xuất phát'),
                     ),
                   if (role != null && Perm.printInvoice(role)) ...[
                     const PopupMenuItem(value: 'print', child: Text('In phiếu')),
@@ -90,14 +106,25 @@ class OrderDetailScreen extends StatelessWidget {
                           const SizedBox(width: 6),
                         ],
                         StatusChip(orderStatusUi(o.orderStatus), dense: true),
-                        const SizedBox(width: 6),
-                        StatusChip(paymentStatusUi(o.paymentStatus), dense: true),
+                        if (showMoney) ...[
+                          const SizedBox(width: 6),
+                          StatusChip(paymentStatusUi(o.paymentStatus),
+                              dense: true),
+                        ],
                       ],
                     ),
                     const Divider(height: 20),
                     KVRow('Khách hàng', o.customerName),
                     KVRow('SĐT', o.customerPhone),
                     KVRow('Địa chỉ giao', o.deliveryAddress),
+                    if (o.hasCarrier) ...[
+                      KVRow('Nhà xe', o.deliveryCarrierName, bold: true),
+                      if (o.deliveryCarrierPhone.isNotEmpty)
+                        KVRow('SĐT nhà xe', o.deliveryCarrierPhone),
+                    ],
+                    if (o.plannedDepartAt != null)
+                      KVRow('Giờ xuất phát dự kiến',
+                          fmtDateTime(o.plannedDepartAt)),
                     if (o.deliveryNote.isNotEmpty)
                       KVRow('Ghi chú giao', o.deliveryNote),
                     if (o.packageCode != null)
@@ -133,27 +160,57 @@ class OrderDetailScreen extends StatelessWidget {
                     const SizedBox(height: 8),
                     for (final it in o.items)
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        padding: const EdgeInsets.symmetric(vertical: 5),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(child: Text(it.displayName)),
-                            Text('x${it.quantity}',
-                                style: const TextStyle(
-                                    color: AppColors.textSecondary)),
-                            const SizedBox(width: 16),
-                            Text(money(it.lineTotal),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600)),
+                            Expanded(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(it.displayName,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  // Phân loại là thứ phân biệt các dòng cùng
+                                  // sản phẩm + quy cách nhưng khác giá.
+                                  if (it.variantName.trim().isNotEmpty &&
+                                      it.variantName.trim().toLowerCase() !=
+                                          it.productName.trim().toLowerCase())
+                                    Text(it.variantName,
+                                        style: const TextStyle(
+                                            fontSize: 11.5,
+                                            color: AppColors.textSecondary)),
+                                  Text(
+                                      showMoney
+                                          ? '${money(it.unitPrice)} × ${it.quantity}'
+                                          : 'Số lượng: ${it.quantity}',
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textSecondary)),
+                                ],
+                              ),
+                            ),
+                            if (showMoney) ...[
+                              const SizedBox(width: 12),
+                              Text(money(it.lineTotal),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600)),
+                            ],
                           ],
                         ),
                       ),
-                    const Divider(),
-                    KVRow('Tổng cộng', money(o.total), bold: true),
+                    if (showMoney) ...[
+                      const Divider(),
+                      KVRow('Tổng cộng', money(o.total), bold: true),
+                    ],
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
-              _PaymentCard(order: o),
+              if (showMoney) ...[
+                const SizedBox(height: 12),
+                _PaymentCard(order: o),
+              ],
               const SizedBox(height: 12),
               _TimelineCard(order: o),
               const SizedBox(height: 80),
@@ -167,9 +224,12 @@ class OrderDetailScreen extends StatelessWidget {
 
   Future<void> _onMenu(BuildContext context, Db db, Order o, String v) async {
     final user = context.read<AuthProvider>().user!;
+    final showMoney = Perm.viewMoney(user.role);
     if (v == 'print') {
-      Navigator.push(context,
-          MaterialPageRoute(builder: (_) => InvoiceScreen(order: o)));
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => InvoiceScreen(order: o, showMoney: showMoney)));
     } else if (v == 'priority') {
       final on = !o.priority;
       await db.setOrderPriority(o, on,
@@ -180,13 +240,49 @@ class OrderDetailScreen extends StatelessWidget {
     } else if (v == 'pdf') {
       // Lấy tiêu đề + SĐT hiện hành để phiếu PDF khớp với bản xem trước.
       final shop = await db.shopInfo().first;
-      if (context.mounted) await downloadInvoicePdf(context, o, shop);
+      if (context.mounted) {
+        await downloadInvoicePdf(context, o, shop, showMoney: showMoney);
+      }
+    } else if (v == 'depart-time') {
+      await _pickDepartTime(context, db, o, user);
     } else if (v == 'cancel') {
       final reason = await askReason(context, 'Lý do hủy đơn');
       if (reason != null) {
         await db.cancelOrder(o, reason, user.name, actorId: user.id);
         if (context.mounted) toast(context, 'Đã hủy đơn');
       }
+    }
+  }
+}
+
+/// Đơn còn ở hàng đợi (chưa lên đường) thì mới đặt/đổi được giờ dự kiến.
+bool _canPlanDepart(Order o) =>
+    o.orderStatus != OrderStatus.CANCELLED &&
+    (o.deliveryStatus == DeliveryStatus.WAITING_ASSIGNMENT ||
+        o.deliveryStatus == DeliveryStatus.ASSIGNED ||
+        o.deliveryStatus == DeliveryStatus.LOADING ||
+        o.deliveryStatus == DeliveryStatus.RESCHEDULED);
+
+/// Đặt / đổi giờ xuất phát dự kiến của đơn.
+Future<void> _pickDepartTime(
+    BuildContext context, Db db, Order o, AppUser user) async {
+  final picked = await pickDateTime(
+    context,
+    initial: o.plannedDepartAt,
+    helpText: 'Ngày xuất phát dự kiến',
+  );
+  if (picked == null || !context.mounted) return;
+  try {
+    await db.setPlannedDepart(o, picked,
+        actorId: user.id, actorName: user.name);
+    if (context.mounted) {
+      toast(context, 'Đã đặt giờ xuất phát ${fmtDateTime(picked)}');
+    }
+  } catch (e) {
+    debugPrint('SET-PLANNED-DEPART ERROR: $e');
+    if (context.mounted) {
+      toast(context,
+          friendlyError(e, fallback: 'Không đặt được giờ xuất phát.'));
     }
   }
 }

@@ -419,11 +419,9 @@ class Db {
                   _waitingDepart.contains(o.deliveryStatus),
             )
             .toList()
-          ..sort((a, b) {
-            // Đơn GẤP lên đầu, còn lại đơn cũ trước (đóng trước đi trước).
-            if (a.priority != b.priority) return a.priority ? -1 : 1;
-            return a.createdAt.compareTo(b.createdAt);
-          }),
+          // Đơn GẤP lên đầu, còn lại theo giờ dự kiến xuất phát (chưa đặt giờ
+          // thì tính giờ tạo đơn) — xem `Order.byDepartOrder`.
+          ..sort(Order.byDepartOrder),
       );
 
   /// Đơn đang trên đường — Chủ đối soát cuối ngày ở đây.
@@ -437,7 +435,8 @@ class Db {
             .map((d) => Order.fromMap(d.id, d.data()))
             .where((o) => o.orderStatus != OrderStatus.CANCELLED)
             .toList()
-          ..sort((a, b) => a.createdAt.compareTo(b.createdAt)),
+          // Giữ nguyên thứ tự đã xếp lúc chờ đi, để người giao chạy đúng tuyến.
+          ..sort(Order.byDepartOrder),
       );
 
   /// Đơn đã chốt trong ngày [day] — tab "Xong hôm nay" của màn đối soát.
@@ -537,16 +536,19 @@ class Db {
       customerId: draft.customerId,
       customerName: draft.customerName,
       customerPhone: draft.customerPhone,
-      deliveryLabel: draft.deliveryLabel,
       deliveryAddress: draft.deliveryAddress,
       deliveryReceiver: draft.deliveryReceiver,
       deliveryPhone: draft.deliveryPhone,
+      deliveryMapUrl: draft.deliveryMapUrl,
+      deliveryCarrierName: draft.deliveryCarrierName,
+      deliveryCarrierPhone: draft.deliveryCarrierPhone,
       items: draft.items,
       shippingFee: draft.shippingFee,
       discount: draft.discount,
       prepaid: draft.prepaid,
       paidAmount: draft.prepaid,
       paymentStatus: ps,
+      plannedDepartAt: draft.plannedDepartAt,
       note: draft.note,
       deliveryNote: draft.deliveryNote,
       timeline: [
@@ -940,6 +942,43 @@ class Db {
             s.docs.map((d) => PriceHistory.fromMap(d.id, d.data())).toList()
               ..sort((a, b) => b.at.compareTo(a.at)),
       );
+
+  /// Đổi **giờ dự kiến xuất phát** của đơn (đặt lại hoặc xoá bằng `null`).
+  /// Chỉ đổi được khi đơn CHƯA đi — đã lên đường rồi thì giờ dự kiến vô nghĩa
+  /// và sửa nó chỉ làm hàng đợi nhảy lung tung.
+  Future<void> setPlannedDepart(
+    Order o,
+    DateTime? at, {
+    required String actorId,
+    required String actorName,
+  }) async {
+    if (!_waitingDepart.contains(o.deliveryStatus)) {
+      throw Exception('Đơn đã xuất phát nên không đổi được giờ dự kiến.');
+    }
+    await _orders.doc(o.id).update({
+      'plannedDepartAt': at?.millisecondsSinceEpoch,
+    });
+    await _appendTimeline(
+      o.id,
+      TimelineEvent(
+        at: DateTime.now(),
+        title: at == null
+            ? 'Bỏ giờ xuất phát dự kiến'
+            : 'Đặt giờ xuất phát dự kiến: ${fmtDateTime(at)}',
+        actorId: actorId,
+        actorName: actorName,
+      ),
+    );
+    await _audit(
+      action: 'set_planned_depart',
+      entityType: 'order',
+      entityId: o.id,
+      actorId: actorId,
+      actorName: actorName,
+      before: {'plannedDepartAt': o.plannedDepartAt?.millisecondsSinceEpoch},
+      after: {'plannedDepartAt': at?.millisecondsSinceEpoch},
+    );
+  }
 
   // ---------- Cho đơn xuất phát (§11.2 rút gọn) ----------
   /// Đơn đã đóng hàng → **Đang giao**. Không còn chuyến/tài xế: kho đóng xong

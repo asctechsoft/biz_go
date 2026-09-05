@@ -18,11 +18,13 @@ const _brand = 'BizGo';
 ///
 /// Tách khỏi [InvoiceScreen] để màn chi tiết đơn gọi thẳng được, không phải mở
 /// phiếu lên trước.
-Future<void> downloadInvoicePdf(
-    BuildContext context, Order order, ShopInfo shop) async {
+/// [showMoney] false → phiếu chỉ có mặt hàng + số lượng, không cột thành
+/// tiền / tổng cộng / cần thu (phiếu cho kho soạn hàng).
+Future<void> downloadInvoicePdf(BuildContext context, Order order, ShopInfo shop,
+    {bool showMoney = true}) async {
   toast(context, 'Đang tạo PDF...');
   try {
-    await InvoicePdf.export(order, shop);
+    await InvoicePdf.export(order, shop, showMoney: showMoney);
   } catch (e) {
     debugPrint('EXPORT-PDF ERROR: $e');
     if (context.mounted) {
@@ -36,7 +38,16 @@ Future<void> downloadInvoicePdf(
 class InvoiceScreen extends StatelessWidget {
   final Order order;
   final int copies;
-  const InvoiceScreen({super.key, required this.order, this.copies = 1});
+
+  /// false → ẩn đơn giá, thành tiền, tổng cộng, cần thu. Người không phải Chủ
+  /// in ra bản này: đủ để soạn và giao hàng, không lộ giá bán.
+  final bool showMoney;
+  const InvoiceScreen({
+    super.key,
+    required this.order,
+    this.copies = 1,
+    this.showMoney = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -178,12 +189,18 @@ class InvoiceScreen extends StatelessWidget {
                 ),
                 if (o.deliveryReceiver.isNotEmpty)
                   _line('Người nhận:', o.deliveryReceiver),
+                // Gửi qua nhà xe thì đây là thông tin người giao cần nhất.
+                if (o.hasCarrier) ...[
+                  _line('Nhà xe:', o.deliveryCarrierName, bold: true),
+                  if (o.deliveryCarrierPhone.isNotEmpty)
+                    _line('SĐT nhà xe:', o.deliveryCarrierPhone),
+                ],
                 const SizedBox(height: 8),
                 _dashed(),
-                // Bảng sản phẩm
-                const Row(
+                // Bảng sản phẩm — bỏ `const` vì cột "Thành tiền" có điều kiện.
+                Row(
                   children: [
-                    Expanded(
+                    const Expanded(
                       flex: 5,
                       child: Text(
                         'Mặt hàng',
@@ -193,7 +210,7 @@ class InvoiceScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-                    Expanded(
+                    const Expanded(
                       flex: 2,
                       child: Text(
                         'SL',
@@ -204,17 +221,18 @@ class InvoiceScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-                    Expanded(
-                      flex: 4,
-                      child: Text(
-                        'Thành tiền',
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
+                    if (showMoney)
+                      const Expanded(
+                        flex: 4,
+                        child: Text(
+                          'Thành tiền',
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -234,7 +252,9 @@ class InvoiceScreen extends StatelessWidget {
                                 style: const TextStyle(fontSize: 13),
                               ),
                               Text(
-                                '  ${money(it.unitPrice)}/${it.packagingName}',
+                                showMoney
+                                    ? '  ${money(it.unitPrice)}/${it.packagingName}'
+                                    : '  ${it.packagingName}',
                                 style: const TextStyle(
                                   fontSize: 11,
                                   color: AppColors.textSecondary,
@@ -251,58 +271,64 @@ class InvoiceScreen extends StatelessWidget {
                             style: const TextStyle(fontSize: 13),
                           ),
                         ),
-                        Expanded(
-                          flex: 4,
-                          child: Text(
-                            money(it.lineTotal),
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                        if (showMoney)
+                          Expanded(
+                            flex: 4,
+                            child: Text(
+                              money(it.lineTotal),
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
                 const SizedBox(height: 6),
                 _dashed(),
-                _line('Tạm tính:', money(o.subtotal)),
-                if (o.shippingFee != 0)
-                  _line('Phí giao:', money(o.shippingFee)),
-                if (o.discount != 0)
-                  _line('Giảm giá:', '- ${money(o.discount)}'),
-                _line('TỔNG CỘNG:', money(o.total), bold: true, big: true),
-                if (o.paidAmount != 0)
-                  _line('Đã thanh toán:', money(o.paidAmount)),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 8,
-                    horizontal: 10,
-                  ),
-                  color: const Color(0xFFFFF3E0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'CẦN THU:',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
+                if (showMoney) ...[
+                  _line('Tạm tính:', money(o.subtotal)),
+                  if (o.shippingFee != 0)
+                    _line('Phí giao:', money(o.shippingFee)),
+                  if (o.discount != 0)
+                    _line('Giảm giá:', '- ${money(o.discount)}'),
+                  _line('TỔNG CỘNG:', money(o.total), bold: true, big: true),
+                  if (o.paidAmount != 0)
+                    _line('Đã thanh toán:', money(o.paidAmount)),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 10,
+                    ),
+                    color: const Color(0xFFFFF3E0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'CẦN THU:',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
-                      ),
-                      Text(
-                        money(o.remaining > 0 ? o.remaining : 0),
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.danger,
+                        Text(
+                          money(o.remaining > 0 ? o.remaining : 0),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.danger,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                ] else
+                  _line('Tổng số lượng:',
+                      '${o.items.fold<int>(0, (s, i) => s + i.quantity)}',
+                      bold: true),
                 if (o.deliveryNote.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   _line('Ghi chú:', o.deliveryNote),

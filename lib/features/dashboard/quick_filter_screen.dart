@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
 import '../../core/formatters.dart';
+import '../../core/permissions.dart';
 import '../../core/theme.dart';
 import '../../models/app_user.dart';
 import '../../models/order_filter.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/db.dart';
 import '../../widgets/common.dart';
 
@@ -42,6 +44,8 @@ class _QuickFilterScreenState extends State<QuickFilterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final role = context.watch<AuthProvider>().user?.role;
+    final showMoney = role != null && Perm.viewMoney(role);
     return Scaffold(
       appBar: AppBar(title: const Text('Lọc nhanh')),
       body: ListView(
@@ -87,15 +91,17 @@ class _QuickFilterScreenState extends State<QuickFilterScreen> {
                 ? _f.copyWith(clearDeliveryStatus: true)
                 : _f.copyWith(deliveryStatus: v)),
           ),
-          _enumField<PaymentStatus>(
-            'Trạng thái thanh toán',
-            PaymentStatus.values,
-            _f.paymentStatus,
-            (s) => paymentStatusUi(s).label,
-            (v) => setState(() => _f = v == null
-                ? _f.copyWith(clearPaymentStatus: true)
-                : _f.copyWith(paymentStatus: v)),
-          ),
+          // Trạng thái thanh toán là thông tin tiền — chỉ Chủ.
+          if (showMoney)
+            _enumField<PaymentStatus>(
+              'Trạng thái thanh toán',
+              PaymentStatus.values,
+              _f.paymentStatus,
+              (s) => paymentStatusUi(s).label,
+              (v) => setState(() => _f = v == null
+                  ? _f.copyWith(clearPaymentStatus: true)
+                  : _f.copyWith(paymentStatus: v)),
+            ),
           _staffField(),
           const SizedBox(height: 24),
           ElevatedButton(

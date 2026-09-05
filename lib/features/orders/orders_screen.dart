@@ -7,6 +7,7 @@ import '../../core/enums.dart';
 import '../../core/formatters.dart';
 import '../../core/permissions.dart';
 import '../../core/theme.dart';
+import '../../models/app_notification.dart';
 import '../../models/order.dart';
 import '../../models/order_filter.dart';
 import '../../providers/auth_provider.dart';
@@ -32,6 +33,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   OrderFilter _filter = OrderFilter.empty;
 
+  /// Chỉ Chủ thấy tiền. Kho chỉ cần mã đơn + khách + trạng thái để soạn hàng.
+  bool get _showMoney {
+    final role = context.read<AuthProvider>().user?.role;
+    return role != null && Perm.viewMoney(role);
+  }
+
   /// Mở màn Lọc nhanh, nhận bộ lọc trả về.
   Future<void> _openFilter() async {
     final f = await context.push<OrderFilter>('/filter', extra: _filter);
@@ -54,6 +61,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
         appBar: AppBar(
           title: const Text('Đơn hàng'),
           actions: [
+            // Vai trò không có màn Tổng quan thì đây là lối vào DUY NHẤT tới
+            // hộp thông báo — Kiểm hàng chính là người nhận báo "Đơn mới".
+            if (role != null && !Perm.viewDashboard(role))
+              _NotifButton(role: role),
             IconButton(
               icon: Badge(
                 isLabelVisible: _filter.isActive,
@@ -133,7 +144,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
         '${fmtDate(f.custom!.start)} - ${fmtDate(f.custom!.end)}',
       if (f.orderStatus != null) orderStatusUi(f.orderStatus!).label,
       if (f.deliveryStatus != null) deliveryStatusUi(f.deliveryStatus!).label,
-      if (f.paymentStatus != null) paymentStatusUi(f.paymentStatus!).label,
+      if (_showMoney && f.paymentStatus != null)
+        paymentStatusUi(f.paymentStatus!).label,
       if (f.staffId != null) f.staffName,
     ];
     return Material(
@@ -200,7 +212,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
     for (final list in byDay.values) {
       list.sort((a, b) {
         final r = _rank(a).compareTo(_rank(b));
-        return r != 0 ? r : b.createdAt.compareTo(a.createdAt);
+        if (r != 0) return r;
+        // Việc còn phải làm: xếp theo giờ dự kiến xuất phát (đi sớm lên trước),
+        // khớp với hàng đợi ở màn Kho và Giao hàng. Đơn đã xong/huỷ thì mới
+        // lấy đơn mới nhất lên đầu vì đó chỉ là danh sách để tra lại.
+        if (_rank(a) <= 2) return a.departAt.compareTo(b.departAt);
+        return b.createdAt.compareTo(a.createdAt);
       });
     }
 
@@ -253,7 +270,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '${list.length} đơn · ${money(total)}',
+              _showMoney
+                  ? '${list.length} đơn · ${money(total)}'
+                  : '${list.length} đơn',
               style: const TextStyle(
                 fontSize: 12,
                 color: AppColors.textSecondary,
@@ -345,7 +364,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
           children: [
             Text(o.customerName),
             Text(
-              '${money(o.total)} · ${fmtTime(o.createdAt)}',
+              _showMoney
+                  ? '${money(o.total)} · ${fmtTime(o.createdAt)}'
+                  : fmtTime(o.createdAt),
               style: const TextStyle(
                 fontSize: 12,
                 color: AppColors.textSecondary,
@@ -381,4 +402,32 @@ class _UrgentBadge extends StatelessWidget {
           ),
         ),
       );
+}
+
+/// Chuông thông báo + số chưa đọc, cho vai trò KHÔNG thấy màn Tổng quan.
+/// Thiếu nút này thì `/notifications` thành route mồ côi: Kiểm hàng nhận push
+/// "Đơn mới" mà không có chỗ nào trong app để mở lại danh sách.
+class _NotifButton extends StatelessWidget {
+  final UserRole role;
+  const _NotifButton({required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    final db = context.read<Db>();
+    return StreamBuilder<List<AppNotification>>(
+      stream: db.notifications(role),
+      builder: (context, snap) {
+        final unread = (snap.data ?? []).where((n) => !n.read).length;
+        return IconButton(
+          tooltip: 'Thông báo',
+          onPressed: () => context.push('/notifications'),
+          icon: Badge(
+            isLabelVisible: unread > 0,
+            label: Text('$unread'),
+            child: const Icon(Icons.notifications_none),
+          ),
+        );
+      },
+    );
+  }
 }

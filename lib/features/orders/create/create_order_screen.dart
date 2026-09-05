@@ -27,6 +27,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   Customer? _customer;
   CustomerAddress? _address;
   final Map<String, OrderItem> _cart = {}; // key = packagingId
+
+  /// Giá bảng theo packagingId, nhớ lại lúc thêm vào giỏ. Cần để giỏ hàng còn
+  /// biết "giá gốc" là bao nhiêu sau khi người dùng sửa giá tay.
+  final Map<String, int> _listPrice = {};
   String _custQuery = '';
 
   final _shipping = TextEditingController(text: '0');
@@ -35,6 +39,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   final _note = TextEditingController();
   final _deliveryNote = TextEditingController();
   PaymentStatus _payStatus = PaymentStatus.UNPAID;
+
+  /// Giờ dự kiến cho đơn này xuất phát. `null` = chưa đặt → hàng đợi xếp theo
+  /// giờ tạo đơn. Không tự điền sẵn một giờ đoán mò: giờ bịa mà lọt vào hàng
+  /// đợi thì còn khó lần hơn là để trống.
+  DateTime? _plannedDepart;
   bool _busy = false;
   bool _prefilled = false;
 
@@ -104,16 +113,18 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       customerId: _customer!.id,
       customerName: _customer!.name,
       customerPhone: _customer!.phone,
-      deliveryLabel: _address!.label,
       deliveryAddress: _address!.address,
       deliveryReceiver: _address!.receiver,
       deliveryPhone: _address!.phone,
       deliveryMapUrl: _address!.mapUrl,
+      deliveryCarrierName: _address!.carrierName,
+      deliveryCarrierPhone: _address!.carrierPhone,
       items: _cart.values.toList(),
       shippingFee: _int(_shipping),
       discount: _int(_discount),
       prepaid: _int(_prepaid),
       paymentStatus: _payStatus,
+      plannedDepartAt: _plannedDepart,
       note: _note.text.trim(),
       deliveryNote: _deliveryNote.text.trim(),
     );
@@ -279,9 +290,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               groupValue: _address?.id,
               activeColor: AppColors.primary,
               onChanged: (_) => setState(() => _address = a),
-              title: Text(a.label,
+              title: Text(a.address,
                   style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text(a.address),
+              subtitle: Text(a.hasCarrier
+                  ? 'Nhà xe: ${a.carrierName}'
+                  : '${a.receiver} · ${a.phone}'),
             ),
           ),
         OutlinedButton.icon(
@@ -375,13 +388,37 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       itemBuilder: (context, i) {
         final (p, v, pk) = rows[i];
         final inCart = _cart[pk.id];
+        // Giá đang áp cho dòng này: giá đã sửa tay nếu có, không thì giá bảng.
+        final price = inCart?.unitPrice ?? pk.price;
+        final edited = inCart != null && inCart.unitPrice != pk.price;
         return Card(
           color: inCart != null ? AppColors.primaryLight : null,
           child: ListTile(
+            // Chạm cả dòng để sửa số lượng + giá, khỏi bấm +/- chục lần.
+            onTap: () => _editLine(p, v, pk),
             leading: LocalImage(path: p.imagePath, size: 48),
-            title: Text('${p.name} ${pk.name}',
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text('${v.name} · ${money(pk.price)}'),
+            // Phân loại lên làm tiêu đề: cùng "Cùi Bưởi 1kg" nhưng khác phân
+            // loại và khác giá, để tên sản phẩm ở trên thì mọi dòng giống hệt.
+            title: Text(v.name.trim().isEmpty ? p.name : v.name,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Row(
+              children: [
+                Text('${pk.name} · ',
+                    style:
+                        const TextStyle(color: AppColors.textSecondary)),
+                Text(money(price),
+                    style: TextStyle(
+                      fontWeight: edited ? FontWeight.w700 : FontWeight.w400,
+                      color: edited
+                          ? AppColors.primary
+                          : AppColors.textSecondary,
+                    )),
+                if (edited)
+                  const Text('  (đã sửa)',
+                      style: TextStyle(
+                          fontSize: 11, color: AppColors.primary)),
+              ],
+            ),
             trailing: inCart == null
                 ? IconButton.filledTonal(
                     icon: const Icon(Icons.add),
@@ -393,8 +430,20 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       IconButton(
                           icon: const Icon(Icons.remove_circle_outline),
                           onPressed: () => _changeQty(pk.id, -1)),
-                      Text('${inCart.quantity}',
-                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      // Chạm vào số để gõ thẳng số lượng.
+                      InkWell(
+                        onTap: () => _editLine(p, v, pk),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          child: Text('${inCart.quantity}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                  color: AppColors.primary)),
+                        ),
+                      ),
                       IconButton(
                           icon: const Icon(Icons.add_circle,
                               color: AppColors.primary),
@@ -407,7 +456,204 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     );
   }
 
+  /// Sheet sửa **số lượng + đơn giá** của một dòng hàng.
+  ///
+  /// Giá mặc định lấy từ bảng giá (`pk.price`) nhưng cho sửa tay — khách mặc
+  /// cả, hay lô hàng lệch giá. Giá chốt ở đây là giá **snapshot** vào đơn:
+  /// sửa bảng giá sau này KHÔNG đổi đơn đã tạo.
+  Future<void> _editLine(Product p, ProductVariant v, Packaging pk) =>
+      _lineSheet(
+        packagingId: pk.id,
+        title: v.name.trim().isEmpty ? p.name : v.name,
+        sub: '${p.name} · ${pk.name}',
+        listPrice: pk.price,
+        create: () => OrderItem(
+          productId: p.id,
+          variantId: v.id,
+          packagingId: pk.id,
+          productName: p.name,
+          variantName: v.name,
+          packagingName: pk.name,
+          quantity: 1,
+          unitPrice: pk.price,
+          imagePath: p.imagePath,
+        ),
+      );
+
+  /// Cùng sheet đó nhưng mở từ **giỏ hàng**, nơi chỉ còn `OrderItem`.
+  /// Giá bảng lấy lại từ [_listPrice] — dòng nào vào được giỏ thì đã đi qua
+  /// `_addToCart` hoặc `_lineSheet`, nên map luôn có sẵn.
+  Future<void> _editCartLine(OrderItem it) => _lineSheet(
+        packagingId: it.packagingId,
+        title: it.variantLabel,
+        sub: '${it.productName} · ${it.packagingName}',
+        listPrice: _listPrice[it.packagingId] ?? it.unitPrice,
+        create: () => it,
+      );
+
+  Future<void> _lineSheet({
+    required String packagingId,
+    required String title,
+    required String sub,
+    required int listPrice,
+    required OrderItem Function() create,
+  }) async {
+    _listPrice[packagingId] = listPrice;
+    final existing = _cart[packagingId];
+    final qtyC = TextEditingController(text: '${existing?.quantity ?? 1}');
+    final priceC = TextEditingController(
+        text: moneyPlain(existing?.unitPrice ?? listPrice));
+    String? error;
+
+    int qty() => int.tryParse(qtyC.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    int price() => parseMoney(priceC.text);
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom +
+                MediaQuery.of(ctx).padding.bottom +
+                16,
+            left: 16,
+            right: 16,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SheetHeader(title),
+                Text(sub,
+                    style: const TextStyle(color: AppColors.textSecondary)),
+                const SizedBox(height: 16),
+                const Text('Số lượng',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    IconButton.filledTonal(
+                      icon: const Icon(Icons.remove),
+                      onPressed: () => setSheet(() {
+                        final q = qty() - 1;
+                        qtyC.text = '${q < 1 ? 1 : q}';
+                        error = null;
+                      }),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: TextField(
+                          controller: qtyC,
+                          textAlign: TextAlign.center,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w700),
+                          onChanged: (_) => setSheet(() => error = null),
+                          decoration: const InputDecoration(isDense: true),
+                        ),
+                      ),
+                    ),
+                    IconButton.filledTonal(
+                      icon: const Icon(Icons.add),
+                      onPressed: () => setSheet(() {
+                        qtyC.text = '${qty() + 1}';
+                        error = null;
+                      }),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: priceC,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [ThousandsInputFormatter()],
+                  onChanged: (_) => setSheet(() => error = null),
+                  decoration: const InputDecoration(
+                      labelText: 'Đơn giá', suffixText: 'đ'),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Text('Giá bảng: ${money(listPrice)}',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.textSecondary)),
+                    const Spacer(),
+                    if (price() != listPrice)
+                      TextButton(
+                        onPressed: () => setSheet(() {
+                          priceC.text = moneyPlain(listPrice);
+                          error = null;
+                        }),
+                        child: const Text('Dùng giá bảng'),
+                      ),
+                  ],
+                ),
+                const Divider(height: 24),
+                KVRow('Thành tiền', money(qty() * price()), bold: true),
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(error!,
+                      style: const TextStyle(
+                          color: AppColors.danger,
+                          fontWeight: FontWeight.w600)),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    if (existing != null) ...[
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Xoá khỏi đơn'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          // Banner đỏ inline, KHÔNG toast — sheet che mất toast.
+                          if (qty() < 1) {
+                            setSheet(() => error = 'Số lượng phải từ 1 trở lên');
+                            return;
+                          }
+                          if (price() <= 0) {
+                            setSheet(() => error = 'Đơn giá phải lớn hơn 0');
+                            return;
+                          }
+                          Navigator.pop(ctx, true);
+                        },
+                        child: Text(existing == null ? 'Thêm vào đơn' : 'Lưu'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (saved == null) return; // đóng sheet mà không chọn gì
+    setState(() {
+      if (saved == false) {
+        _cart.remove(packagingId);
+        return;
+      }
+      _cart[packagingId] =
+          (existing ?? create()).copyWith(quantity: qty(), unitPrice: price());
+    });
+  }
+
   void _addToCart(Product p, ProductVariant v, Packaging pk) {
+    _listPrice[pk.id] = pk.price;
     setState(() {
       _cart[pk.id] = OrderItem(
         productId: p.id,
@@ -446,43 +692,86 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (context, i) {
         final it = items[i];
+        final listPrice = _listPrice[it.packagingId];
+        final edited = listPrice != null && listPrice != it.unitPrice;
         return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                LocalImage(path: it.imagePath, size: 52),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          child: InkWell(
+            // Chạm cả thẻ để sửa số lượng + giá.
+            onTap: () => _editCartLine(it),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  LocalImage(path: it.imagePath, size: 52),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(it.variantLabel,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w700)),
+                        Text('${it.productName} · ${it.packagingName}',
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary)),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Text(money(it.unitPrice),
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: edited
+                                      ? FontWeight.w700
+                                      : FontWeight.w400,
+                                  color: edited
+                                      ? AppColors.primary
+                                      : AppColors.textSecondary,
+                                )),
+                            if (edited)
+                              Text('  (giá bảng ${money(listPrice)})',
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textSecondary)),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(money(it.lineTotal),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary)),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(it.displayName,
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
-                      Text(money(it.unitPrice),
-                          style: const TextStyle(color: AppColors.textSecondary)),
-                      const SizedBox(height: 4),
-                      Text(money(it.lineTotal),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary)),
+                      IconButton(
+                          icon: const Icon(Icons.remove_circle_outline),
+                          onPressed: () => _changeQty(it.packagingId, -1)),
+                      InkWell(
+                        onTap: () => _editCartLine(it),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          child: Text('${it.quantity}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                  color: AppColors.primary)),
+                        ),
+                      ),
+                      IconButton(
+                          icon: const Icon(Icons.add_circle,
+                              color: AppColors.primary),
+                          onPressed: () => _changeQty(it.packagingId, 1)),
                     ],
                   ),
-                ),
-                Row(
-                  children: [
-                    IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: () => _changeQty(it.packagingId, -1)),
-                    Text('${it.quantity}',
-                        style: const TextStyle(fontWeight: FontWeight.w700)),
-                    IconButton(
-                        icon: const Icon(Icons.add_circle,
-                            color: AppColors.primary),
-                        onPressed: () => _changeQty(it.packagingId, 1)),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -552,6 +841,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+              _departTimeField(),
+              const SizedBox(height: 12),
               TextField(
                 controller: _note,
                 decoration: const InputDecoration(labelText: 'Ghi chú nội bộ'),
@@ -601,6 +892,68 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 ),
               ],
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Ô chọn **giờ dự kiến xuất phát** — quyết định đơn nào đi trước ở màn Kho
+  /// và Giao hàng. Để trống thì đơn xếp theo giờ tạo (tạo trước đi trước).
+  Widget _departTimeField() {
+    final set = _plannedDepart != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () async {
+            final picked = await pickDateTime(
+              context,
+              initial: _plannedDepart,
+              helpText: 'Ngày xuất phát dự kiến',
+            );
+            if (picked != null) setState(() => _plannedDepart = picked);
+          },
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'Giờ xuất phát dự kiến',
+              prefixIcon: Icon(Icons.schedule),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    set ? fmtDateTime(_plannedDepart) : 'Chưa đặt',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color:
+                          set ? AppColors.textPrimary : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                if (set)
+                  InkWell(
+                    onTap: () => setState(() => _plannedDepart = null),
+                    borderRadius: BorderRadius.circular(20),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.close,
+                          size: 18, color: AppColors.textSecondary),
+                    ),
+                  )
+                else
+                  const Icon(Icons.arrow_drop_down,
+                      color: AppColors.textSecondary),
+              ],
+            ),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(left: 12, top: 4),
+          child: Text(
+            'Để trống thì đơn xếp theo giờ tạo. Đơn GẤP luôn lên đầu.',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
         ),
       ],
@@ -665,10 +1018,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     for (final it in items)
                       ListTile(
                         leading: LocalImage(path: it.imagePath, size: 44),
-                        title: Text(it.displayName,
+                        title: Text(it.variantLabel,
                             style:
-                                const TextStyle(fontWeight: FontWeight.w600)),
-                        subtitle: Text('${money(it.unitPrice)} × ${it.quantity}'),
+                                const TextStyle(fontWeight: FontWeight.w700)),
+                        subtitle: Text('${it.packagingName} · '
+                            '${money(it.unitPrice)} × ${it.quantity}'),
                         trailing: Text(money(it.lineTotal),
                             style: const TextStyle(
                                 fontWeight: FontWeight.w700,

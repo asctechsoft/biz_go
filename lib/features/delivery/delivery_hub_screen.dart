@@ -27,6 +27,9 @@ class DeliveryHubScreen extends StatelessWidget {
     final db = context.read<Db>();
     final user = context.watch<AuthProvider>().user;
     final role = user?.role;
+    // Kiểm hàng vào được cả 3 tab (chỉ nút bấm mới bị chặn), nên tiền phải ẩn
+    // theo VAI TRÒ chứ không theo "tab này ai thao tác".
+    final showMoney = role != null && Perm.viewMoney(role);
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -59,12 +62,17 @@ class DeliveryHubScreen extends StatelessWidget {
         ),
         body: TabBarView(
           children: [
-            _WaitingTab(db: db, canDepart: role != null && Perm.startDelivery(role)),
+            _WaitingTab(
+              db: db,
+              canDepart: role != null && Perm.startDelivery(role),
+              showMoney: showMoney,
+            ),
             _DeliveringTab(
               db: db,
               canConfirm: role != null && Perm.confirmDelivery(role),
+              showMoney: showMoney,
             ),
-            _SettledTab(db: db),
+            _SettledTab(db: db, showMoney: showMoney),
           ],
         ),
       ),
@@ -76,7 +84,12 @@ class DeliveryHubScreen extends StatelessWidget {
 class _WaitingTab extends StatelessWidget {
   final Db db;
   final bool canDepart;
-  const _WaitingTab({required this.db, required this.canDepart});
+  final bool showMoney;
+  const _WaitingTab({
+    required this.db,
+    required this.canDepart,
+    required this.showMoney,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -102,6 +115,7 @@ class _WaitingTab extends StatelessWidget {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, i) => _OrderCard(
                   order: orders[i],
+                  showMoney: showMoney,
                   action: canDepart
                       ? _CardAction(
                           label: 'Xuất phát',
@@ -138,7 +152,12 @@ class _WaitingTab extends StatelessWidget {
 class _DeliveringTab extends StatelessWidget {
   final Db db;
   final bool canConfirm;
-  const _DeliveringTab({required this.db, required this.canConfirm});
+  final bool showMoney;
+  const _DeliveringTab({
+    required this.db,
+    required this.canConfirm,
+    required this.showMoney,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -178,10 +197,11 @@ class _DeliveringTab extends StatelessWidget {
                   Text('${orders.length} đơn đang giao',
                       style: const TextStyle(fontWeight: FontWeight.w700)),
                   const Spacer(),
-                  Text('Cần thu ${money(totalCod)}',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.primary)),
+                  if (showMoney)
+                    Text('Cần thu ${money(totalCod)}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary)),
                 ],
               ),
             ),
@@ -194,6 +214,7 @@ class _DeliveringTab extends StatelessWidget {
                   final o = orders[i];
                   return _OrderCard(
                     order: o,
+                    showMoney: showMoney,
                     action: canConfirm
                         ? _CardAction(
                             label: 'Giao thành công',
@@ -217,7 +238,8 @@ class _DeliveringTab extends StatelessWidget {
 // ------------------------- Xong hôm nay -------------------------
 class _SettledTab extends StatelessWidget {
   final Db db;
-  const _SettledTab({required this.db});
+  final bool showMoney;
+  const _SettledTab({required this.db, required this.showMoney});
 
   @override
   Widget build(BuildContext context) {
@@ -255,10 +277,11 @@ class _SettledTab extends StatelessWidget {
                   Text('${orders.length} đơn đã chốt',
                       style: const TextStyle(fontWeight: FontWeight.w700)),
                   const Spacer(),
-                  Text('Đã thu ${money(collected)}',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.success)),
+                  if (showMoney)
+                    Text('Đã thu ${money(collected)}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.success)),
                 ],
               ),
             ),
@@ -267,7 +290,8 @@ class _SettledTab extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 itemCount: orders.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, i) => _OrderCard(order: orders[i]),
+                itemBuilder: (context, i) =>
+                    _OrderCard(order: orders[i], showMoney: showMoney),
               ),
             ),
           ],
@@ -296,7 +320,15 @@ class _CardAction {
 class _OrderCard extends StatelessWidget {
   final Order order;
   final _CardAction? action;
-  const _OrderCard({required this.order, this.action});
+
+  /// Ẩn hết tiền khi người xem không phải Chủ (tab "Chờ xuất phát" có Kiểm
+  /// hàng vào). Hai tab còn lại chỉ Chủ dùng nên luôn true.
+  final bool showMoney;
+  const _OrderCard({
+    required this.order,
+    required this.showMoney,
+    this.action,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -333,6 +365,19 @@ class _OrderCard extends StatelessWidget {
                     child: Text(o.code,
                         style: const TextStyle(fontWeight: FontWeight.w700)),
                   ),
+                  // Giờ dự kiến xuất phát — chính là thứ quyết định vị trí của
+                  // đơn trong danh sách này, nên phải nhìn thấy được.
+                  if (o.plannedDepartAt != null) ...[
+                    const Icon(Icons.schedule,
+                        size: 14, color: AppColors.primary),
+                    const SizedBox(width: 3),
+                    Text(fmtDepartAt(o.plannedDepartAt),
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary)),
+                    const SizedBox(width: 8),
+                  ],
                   StatusChip(deliveryStatusUi(o.deliveryStatus), dense: true),
                 ],
               ),
@@ -346,23 +391,41 @@ class _OrderCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                       fontSize: 12.5, color: AppColors.textSecondary)),
+              // Gửi qua nhà xe: người đi giao cần biết giao cho nhà xe nào.
+              if (o.hasCarrier)
+                Text(
+                    'Nhà xe: ${o.deliveryCarrierName}'
+                    '${o.deliveryCarrierPhone.isEmpty ? '' : ' · ${o.deliveryCarrierPhone}'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary)),
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Text(money(o.total),
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
-                  const SizedBox(width: 10),
-                  if (o.remaining > 0)
-                    Text('Cần thu ${money(o.remaining)}',
+                  if (showMoney) ...[
+                    Text(money(o.total),
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 10),
+                    if (o.remaining > 0)
+                      Text('Cần thu ${money(o.remaining)}',
+                          style: const TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.danger,
+                              fontWeight: FontWeight.w600))
+                    else
+                      const Text('Đã thanh toán đủ',
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.success,
+                              fontWeight: FontWeight.w600)),
+                  ] else
+                    Text('${o.items.length} mặt hàng',
                         style: const TextStyle(
                             fontSize: 12.5,
-                            color: AppColors.danger,
-                            fontWeight: FontWeight.w600))
-                  else
-                    const Text('Đã thanh toán đủ',
-                        style: TextStyle(
-                            fontSize: 12.5,
-                            color: AppColors.success,
+                            color: AppColors.textSecondary,
                             fontWeight: FontWeight.w600)),
                   const Spacer(),
                   InkWell(

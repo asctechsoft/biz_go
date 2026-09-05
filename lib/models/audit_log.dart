@@ -38,6 +38,7 @@ class AuditLog {
         'cancel_order' => 'Hủy đơn',
         'warehouse_step' => 'Cập nhật kho',
         'pack_order' => 'Đóng hàng',
+        'set_planned_depart' => 'Đặt giờ xuất phát',
         'depart_order' => 'Xuất phát',
         'deliver_order' => 'Giao hàng',
         'delivery_failed' => 'Giao không thành công',

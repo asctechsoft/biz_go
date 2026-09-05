@@ -2,31 +2,43 @@ import 'package:uuid/uuid.dart';
 
 class CustomerAddress {
   final String id;
-  final String label; // Tên địa chỉ: Nhà riêng, Cửa hàng 1...
   final String receiver; // Người nhận
   final String phone;
   final String address;
+
+  /// Nhà xe chở hàng tới địa chỉ này (gửi hàng qua nhà xe là chuyện thường ở
+  /// tuyến tỉnh). Để trống nếu giao thẳng.
+  final String carrierName;
+  final String carrierPhone;
+
   final String note;
   final String mapUrl; // link Google Maps (tùy chọn) để mở chỉ đường
   final bool isDefault;
 
   CustomerAddress({
     String? id,
-    required this.label,
     required this.receiver,
     required this.phone,
     required this.address,
+    this.carrierName = '',
+    this.carrierPhone = '',
     this.note = '',
     this.mapUrl = '',
     this.isDefault = false,
   }) : id = id ?? const Uuid().v4();
 
+  /// Có khai nhà xe không — dùng để quyết định hiện dòng nhà xe trên phiếu.
+  bool get hasCarrier => carrierName.trim().isNotEmpty;
+
+  // `label` (Tên địa chỉ) đã bỏ — địa chỉ tự nó đủ nhận biết rồi. Doc cũ còn
+  // field đó trong Firestore thì cứ để, không đọc tới nữa.
   factory CustomerAddress.fromMap(Map<String, dynamic> m) => CustomerAddress(
         id: m['id'],
-        label: m['label'] ?? '',
         receiver: m['receiver'] ?? '',
         phone: m['phone'] ?? '',
         address: m['address'] ?? '',
+        carrierName: m['carrierName'] ?? '',
+        carrierPhone: m['carrierPhone'] ?? '',
         note: m['note'] ?? '',
         mapUrl: m['mapUrl'] ?? '',
         isDefault: m['isDefault'] ?? false,
@@ -34,10 +46,11 @@ class CustomerAddress {
 
   Map<String, dynamic> toMap() => {
         'id': id,
-        'label': label,
         'receiver': receiver,
         'phone': phone,
         'address': address,
+        'carrierName': carrierName,
+        'carrierPhone': carrierPhone,
         'note': note,
         'mapUrl': mapUrl,
         'isDefault': isDefault,
@@ -45,10 +58,11 @@ class CustomerAddress {
 
   CustomerAddress copyWith({bool? isDefault}) => CustomerAddress(
         id: id,
-        label: label,
         receiver: receiver,
         phone: phone,
         address: address,
+        carrierName: carrierName,
+        carrierPhone: carrierPhone,
         note: note,
         mapUrl: mapUrl,
         isDefault: isDefault ?? this.isDefault,

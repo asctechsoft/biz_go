@@ -30,7 +30,12 @@ class InvoicePdf {
   }
 
   /// Dựng file PDF (A5 dọc). Nhiều mặt hàng thì `MultiPage` tự sang trang.
-  static Future<Uint8List> build(Order o, ShopInfo shop) async {
+  ///
+  /// [showMoney] false → phiếu chỉ có mặt hàng + số lượng: bỏ cột thành tiền,
+  /// bỏ khối tổng cộng và ô CẦN THU. Dùng cho người không phải Chủ, đủ để soạn
+  /// và giao hàng mà không lộ giá bán.
+  static Future<Uint8List> build(Order o, ShopInfo shop,
+      {bool showMoney = true}) async {
     await _loadFonts();
     final doc = pw.Document(
       theme: pw.ThemeData.withFont(base: _regular!, bold: _bold!),
@@ -52,18 +57,29 @@ class InvoicePdf {
           _kv('Địa chỉ:', o.deliveryAddress.isEmpty ? '--' : o.deliveryAddress),
           if (o.deliveryReceiver.isNotEmpty)
             _kv('Người nhận:', o.deliveryReceiver),
+          // Gửi qua nhà xe thì đây là thông tin người giao cần nhất.
+          if (o.hasCarrier) ...[
+            _kv('Nhà xe:', o.deliveryCarrierName, bold: true),
+            if (o.deliveryCarrierPhone.isNotEmpty)
+              _kv('SĐT nhà xe:', o.deliveryCarrierPhone),
+          ],
           pw.SizedBox(height: 8),
           _dashed(),
-          _items(o),
+          _items(o, showMoney),
           pw.SizedBox(height: 6),
           _dashed(),
-          _kv('Tạm tính:', money(o.subtotal)),
-          if (o.shippingFee != 0) _kv('Phí giao:', money(o.shippingFee)),
-          if (o.discount != 0) _kv('Giảm giá:', '- ${money(o.discount)}'),
-          _kv('TỔNG CỘNG:', money(o.total), bold: true, size: 12),
-          if (o.paidAmount != 0) _kv('Đã thanh toán:', money(o.paidAmount)),
-          pw.SizedBox(height: 8),
-          _due(o),
+          if (showMoney) ...[
+            _kv('Tạm tính:', money(o.subtotal)),
+            if (o.shippingFee != 0) _kv('Phí giao:', money(o.shippingFee)),
+            if (o.discount != 0) _kv('Giảm giá:', '- ${money(o.discount)}'),
+            _kv('TỔNG CỘNG:', money(o.total), bold: true, size: 12),
+            if (o.paidAmount != 0) _kv('Đã thanh toán:', money(o.paidAmount)),
+            pw.SizedBox(height: 8),
+            _due(o),
+          ] else
+            _kv('Tổng số lượng:',
+                '${o.items.fold<int>(0, (s, i) => s + i.quantity)}',
+                bold: true),
           if (o.deliveryNote.isNotEmpty) ...[
             pw.SizedBox(height: 6),
             _kv('Ghi chú:', o.deliveryNote),
@@ -85,8 +101,9 @@ class InvoicePdf {
 
   /// Dựng PDF, ghi ra file tạm rồi mở hộp chia sẻ để người dùng lưu về máy
   /// hoặc gửi Zalo/Drive. Trả về file đã ghi.
-  static Future<File> export(Order o, ShopInfo shop) async {
-    final bytes = await build(o, shop);
+  static Future<File> export(Order o, ShopInfo shop,
+      {bool showMoney = true}) async {
+    final bytes = await build(o, shop, showMoney: showMoney);
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/Phieu_${o.code}.pdf')
       ..createSync(recursive: true)
@@ -152,15 +169,17 @@ class InvoicePdf {
         ),
       );
 
-  static pw.Widget _items(Order o) => pw.Column(
+  static pw.Widget _items(Order o, bool showMoney) => pw.Column(
         children: [
           pw.Row(
             children: [
               pw.Expanded(flex: 5, child: _th('Mặt hàng')),
               pw.Expanded(
                   flex: 2, child: _th('SL', align: pw.TextAlign.center)),
-              pw.Expanded(
-                  flex: 4, child: _th('Thành tiền', align: pw.TextAlign.right)),
+              if (showMoney)
+                pw.Expanded(
+                    flex: 4,
+                    child: _th('Thành tiền', align: pw.TextAlign.right)),
             ],
           ),
           pw.SizedBox(height: 4),
@@ -177,7 +196,10 @@ class InvoicePdf {
                       children: [
                         pw.Text(it.displayName,
                             style: const pw.TextStyle(fontSize: 10)),
-                        pw.Text('${money(it.unitPrice)}/${it.packagingName}',
+                        pw.Text(
+                            showMoney
+                                ? '${money(it.unitPrice)}/${it.packagingName}'
+                                : it.packagingName,
                             style: const pw.TextStyle(
                                 fontSize: 8, color: PdfColors.grey700)),
                       ],
@@ -189,13 +211,14 @@ class InvoicePdf {
                         textAlign: pw.TextAlign.center,
                         style: const pw.TextStyle(fontSize: 10)),
                   ),
-                  pw.Expanded(
-                    flex: 4,
-                    child: pw.Text(money(it.lineTotal),
-                        textAlign: pw.TextAlign.right,
-                        style: pw.TextStyle(
-                            fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  ),
+                  if (showMoney)
+                    pw.Expanded(
+                      flex: 4,
+                      child: pw.Text(money(it.lineTotal),
+                          textAlign: pw.TextAlign.right,
+                          style: pw.TextStyle(
+                              fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                    ),
                 ],
               ),
             ),

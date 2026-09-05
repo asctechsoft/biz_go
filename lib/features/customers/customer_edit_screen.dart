@@ -174,9 +174,11 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
               margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
                 onTap: () => _editAddress(i),
-                title: Text(_addresses[i].label,
+                title: Text(_addresses[i].address,
                     style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text(_addresses[i].address),
+                subtitle: Text(_addresses[i].hasCarrier
+                    ? 'Nhà xe: ${_addresses[i].carrierName}'
+                    : '${_addresses[i].receiver} · ${_addresses[i].phone}'),
                 trailing: IconButton(
                   icon: Icon(
                     _addresses[i].isDefault
@@ -240,12 +242,15 @@ class _AddressFormScreen extends StatefulWidget {
 }
 
 class _AddressFormScreenState extends State<_AddressFormScreen> {
-  late final _label = TextEditingController(text: widget.existing?.label ?? '');
   late final _receiver =
       TextEditingController(text: widget.existing?.receiver ?? '');
   late final _phone = TextEditingController(text: widget.existing?.phone ?? '');
   late final _address =
       TextEditingController(text: widget.existing?.address ?? '');
+  late final _carrier =
+      TextEditingController(text: widget.existing?.carrierName ?? '');
+  late final _carrierPhone =
+      TextEditingController(text: widget.existing?.carrierPhone ?? '');
   late final _note = TextEditingController(text: widget.existing?.note ?? '');
   late final _map = TextEditingController(text: widget.existing?.mapUrl ?? '');
   late bool _default = widget.existing?.isDefault ?? false;
@@ -254,7 +259,15 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
   @override
   void initState() {
     super.initState();
-    for (final c in [_label, _receiver, _phone, _address, _note, _map]) {
+    for (final c in [
+      _receiver,
+      _phone,
+      _address,
+      _carrier,
+      _carrierPhone,
+      _note,
+      _map,
+    ]) {
       c.addListener(() => _dirty = true);
     }
   }
@@ -284,7 +297,6 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
         padding: EdgeInsets.fromLTRB(
             16, 16, 16, 16 + MediaQuery.of(context).padding.bottom),
         children: [
-          _f('Tên địa chỉ', _label, hint: 'Cửa hàng 3'),
           _f('Người nhận', _receiver),
           _f('Số điện thoại', _phone, keyboard: TextInputType.phone),
           _f('Địa chỉ', _address, maxLines: 2),
@@ -299,6 +311,13 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
               label: const Text('Mở trên Google Maps'),
             ),
           ),
+          const Padding(
+            padding: EdgeInsets.only(top: 4, bottom: 10),
+            child: Text('Nhà xe (nếu gửi hàng qua nhà xe)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          ),
+          _f('Tên nhà xe', _carrier, hint: 'VD: Nhà xe Hoàng Long'),
+          _f('SĐT nhà xe', _carrierPhone, keyboard: TextInputType.phone),
           _f('Ghi chú', _note),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -312,8 +331,8 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: () {
-              if (_label.text.trim().isEmpty || _address.text.trim().isEmpty) {
-                toast(context, 'Nhập tên địa chỉ và địa chỉ');
+              if (_address.text.trim().isEmpty) {
+                toast(context, 'Nhập địa chỉ giao hàng');
                 return;
               }
               _dirty = false;
@@ -321,10 +340,11 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
                 context,
                 CustomerAddress(
                   id: widget.existing?.id,
-                  label: _label.text.trim(),
                   receiver: _receiver.text.trim(),
                   phone: _phone.text.trim(),
                   address: _address.text.trim(),
+                  carrierName: _carrier.text.trim(),
+                  carrierPhone: _carrierPhone.text.trim(),
                   note: _note.text.trim(),
                   mapUrl: _map.text.trim(),
                   isDefault: _default,

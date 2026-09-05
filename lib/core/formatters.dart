@@ -44,6 +44,19 @@ String fmtDate(DateTime? d) => d == null ? '--' : _dateFmt.format(d);
 String fmtDateTime(DateTime? d) => d == null ? '--' : _dateTimeFmt.format(d);
 String fmtTime(DateTime? d) => d == null ? '--' : _timeFmt.format(d);
 
+final _dayTimeFmt = DateFormat('dd/MM HH:mm');
+
+/// Giờ xuất phát dự kiến hiện trên thẻ đơn: trong ngày hôm nay thì chỉ cần
+/// `HH:mm` cho gọn, khác ngày mới kèm `dd/MM` — để người xem hàng đợi nhận ra
+/// ngay đơn nào là của hôm khác.
+String fmtDepartAt(DateTime? d) {
+  if (d == null) return '--';
+  final now = DateTime.now();
+  final sameDay =
+      d.year == now.year && d.month == now.month && d.day == now.day;
+  return sameDay ? _timeFmt.format(d) : _dayTimeFmt.format(d);
+}
+
 /// Order code: DHyyMMdd-NNN.
 String orderCode(DateTime d, int seq) =>
     'DH${DateFormat('yyMMdd').format(d)}-${seq.toString().padLeft(3, '0')}';

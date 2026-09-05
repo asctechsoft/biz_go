@@ -20,7 +20,8 @@ App mobile **BizGo** — quản lý bán hàng / giao hàng / công nợ. **Flut
 > `vehicles` · `drivers` · `trips` là **legacy** — phân hệ chuyến xe/tài xế đã bỏ. Code không đọc/ghi nữa, chỉ còn nằm trong danh sách xoá của `Db.clearAllData` để dọn dữ liệu cũ.
 
 - **users/{uid}:** `{name, phone, role, active, fcmTokens[], mustChangeCredentials?}`. `role` = tên enum (`owner`/`checker`/`warehouse`). `mustChangeCredentials` KHÔNG nằm trong `AppUser.toMap()` (tránh bị `set(merge)` reset) — chỉ ghi ở chỗ cố ý.
-- **orders:** snapshot `items[]` (giá tại thời điểm đặt), snapshot địa chỉ giao, `timeline[]` nhúng, các cờ trạng thái, `paidAmount`, `remaining`, `cancelReason`, `pushSent`(do noti-server set).
+- **customers.addresses[]:** `{id, receiver, phone, address, carrierName, carrierPhone, note, mapUrl, isDefault}`. KHÔNG còn `label` ("Tên địa chỉ") — bản thân địa chỉ đã đủ nhận biết; doc cũ còn field đó thì cứ để, code không đọc tới. `carrierName`/`carrierPhone` = **nhà xe** chở hàng tới địa chỉ đó, để trống nếu giao thẳng.
+- **orders:** snapshot `items[]` (giá tại thời điểm đặt), snapshot địa chỉ giao + nhà xe (`deliveryCarrierName`/`deliveryCarrierPhone`), `timeline[]` nhúng, các cờ trạng thái, `paidAmount`, `remaining`, `plannedDepartAt`, `cancelReason`, `pushSent`(do noti-server set).
 - **notifications:** `{title, body, targetRoles[], refType, refId, at, read, icon, pushSent}` — noti-server đọc để push.
 - **counters/{kind_yyMMdd}:** sinh mã đơn `DHyyMMdd-NNN`, mã kiện `KIyyMMdd-NNN` (transaction).
 
@@ -38,7 +39,9 @@ Enum lưu Firestore bằng `.name`. Nhãn tiếng Việt + màu qua các hàm `*
 
 ## RBAC (`lib/core/permissions.dart` — class `Perm`)
 
-- **owner:** toàn quyền — là người DUY NHẤT đối soát giao hàng + thu tiền (`Perm.confirmDelivery`, `Perm.collectPayment`). **checker:** kho/đóng hàng/in phiếu, xem đơn, bấm **Xuất phát** (`Perm.startDelivery`). **warehouse:** chỉ thao tác kho + xem đơn.
+- **owner:** toàn quyền — là người DUY NHẤT xem màn Tổng quan (`Perm.viewDashboard`) và đối soát giao hàng + thu tiền (`Perm.confirmDelivery`, `Perm.collectPayment`). **checker:** kho/đóng hàng/in phiếu, xem đơn, bấm **Xuất phát** (`Perm.startDelivery`). **warehouse:** chỉ thao tác kho + xem đơn.
+- **Tiền chỉ owner (`Perm.viewMoney`).** Đơn giá, thành tiền, tổng cộng, đã thu, còn thiếu, trạng thái thanh toán — ẩn hết với checker/warehouse, cả trong app lẫn **trên phiếu in**. KHÔNG có chỗ chặn chung: phải gate ở TỪNG nơi hiện tiền. Hiện đang gate ở `orders_screen` (thẻ đơn + tổng theo ngày + thanh lọc), `order_detail_screen` (dòng hàng, tổng cộng, `_PaymentCard`, chip trạng thái thanh toán), `delivery_hub_screen` (cả 3 tab — checker vào được cả 3, chỉ nút bấm bị chặn, nên phải truyền `showMoney` theo VAI TRÒ chứ đừng suy ra từ "tab này ai thao tác"), `quick_filter_screen` (bỏ ô lọc trạng thái thanh toán), `InvoiceScreen(showMoney:)` và `InvoicePdf.build(showMoney:)`. Thêm chỗ hiện `money()` mới thì nhớ gate.
+- **`/dashboard` chỉ owner.** `Perm.home(role)` = tab đầu tiên, nên checker/warehouse đăng nhập vào thẳng `/orders`. Hộp thông báo `/notifications` trước đây CHỈ mở được từ màn Tổng quan → màn Đơn hàng có thêm chuông (`_NotifButton`) cho vai trò không thấy Tổng quan; bỏ nút đó đi là checker mất chỗ đọc thông báo "Đơn mới".
 - Chặn 3 tầng: `Perm.tabs(role)` (bottom nav) · gate nút trong UI · `Perm.canRoute(role, loc)` (router redirect).
 - **Nhiều owner được, nhưng luôn phải còn ít nhất 1.** Owner tạo tài khoản khác (kể cả owner thứ hai) qua **Quản lý người dùng** (`/users`). Tạo account dùng **FirebaseApp phụ** (`AuthService.createUserAsAdmin`) để owner không bị đăng xuất — KHÔNG tạo user bằng app chính.
 - **Nhiều owner = nhiều người quản CÙNG một cửa hàng**, dùng chung toàn bộ dữ liệu. App là **single-tenant**: một Firestore = một cửa hàng, không có `tenantId` ở đâu cả. Muốn 2 cơ sở tách dữ liệu thì phải 2 Firebase project riêng, **đừng** tạo 2 owner.
@@ -53,16 +56,19 @@ Enum lưu Firestore bằng `.name`. Nhãn tiếng Việt + màu qua các hàm `*
 - **Tiền = `int` đồng.** Format bằng `money()` (`lib/core/formatters.dart`). Không float.
 - **Khối lượng = `double` kg.** `order.weightKg` LUÔN quy về kg; `order.weightUnit` (`kg`/`tạ`/`tấn`, hệ số ở `weightUnits`) chỉ để hiển thị lại đúng đơn vị đã nhập — dùng `fmtWeight()`. Không lưu số theo đơn vị người dùng chọn.
 - **Mã kiện tự sinh.** Đóng hàng xong → `Db.nextPackageCode()` cấp `KIyyMMdd-NNN` (counter `package_yyMMdd`), hiện sẵn read-only trong dialog; người dùng CHỈ nhập khối lượng + đơn vị. `order.packageCount` là **legacy** (số kiện nhập tay trước đây) — chỉ đọc để hiện đơn cũ, không ghi mới.
-- **Snapshot:** `order_item.unitPrice` và địa chỉ giao chốt lúc tạo đơn — sửa bảng giá/địa chỉ sau KHÔNG đổi đơn cũ.
+- **Sửa giá từng dòng khi tạo đơn.** Bảng giá (`Packaging.price`) chỉ là **giá mặc định**: ở bước Chọn sản phẩm / Giỏ hàng, chạm vào dòng hàng mở sheet `_lineSheet` sửa cả **số lượng** (gõ thẳng, không phải bấm +/- nhiều lần) lẫn **đơn giá**, có nút "Dùng giá bảng" để quay lại. Giá gốc nhớ trong `_listPrice` (packagingId → giá bảng) để còn biết dòng nào đã sửa tay.
+- **Phân loại (`variantName`) là thứ phân biệt các dòng hàng.** Cùng sản phẩm + quy cách vẫn có nhiều phân loại giá khác nhau, nên danh sách chọn hàng và giỏ hàng lấy **phân loại làm tiêu đề** (`OrderItem.variantLabel`), sản phẩm + quy cách + giá xuống dòng dưới. Bỏ phân loại đi là mấy dòng trông y hệt nhau.
+- **Snapshot:** `order_item.unitPrice`, địa chỉ giao **và nhà xe** chốt lúc tạo đơn — sửa bảng giá/địa chỉ/nhà xe sau KHÔNG đổi đơn cũ. Khi thêm field vào `CustomerAddress` mà đơn cần biết, nhớ chép sang `Order` (`delivery*`) **và** cả trong `Db.createOrder` — hàm đó dựng `Order` mới từ `draft` chứ không copy cả cục, thiếu một dòng là field im lặng biến mất.
 - **Payment bất biến:** mỗi lần thu = 1 doc `payments` mới. Hủy đơn có tiền → ghi payment **âm** (hoàn), không sửa/xóa payment cũ (`Db.cancelOrder`).
 - **Chuyển trạng thái** → append timeline + `_audit()` + `_notify()` (xem các method trong `Db`).
+- **Thứ tự đi = GẤP trước, rồi tới giờ.** `order.plannedDepartAt` (giờ dự kiến xuất phát, người tạo đơn đặt ở bước Xác nhận) có thể `null`; đừng đọc thẳng nó để sắp xếp mà dùng `order.departAt` (`plannedDepartAt ?? createdAt`) và `Order.byDepartOrder` — MỌI danh sách hàng đợi (kho, giao hàng, tab Đơn hàng) phải xếp bằng đúng comparator này, xếp lệch nhau là kho làm sai thứ tự. Đổi giờ sau khi tạo qua `Db.setPlannedDepart`, chỉ được khi đơn CHƯA đi.
 - **Xuất phát ở tầng `Db`.** `Db.departOrder` (1 đơn) / `Db.departOrders` (cả lô, 1 batch) — kiểm `PACKED` + chưa đi + chưa hủy ngay trong `Db`, đừng chỉ chặn ở UI. Bấm lại đơn đã đi thì bỏ qua (không sinh timeline rác). Thao tác UI dùng chung ở `lib/features/delivery/delivery_actions.dart` (`departOrder` / `departAllOrders` / `deliverOrder` / `failOrder`) — sửa nghiệp vụ giao hàng thì sửa ở đó, đừng chép lại vào từng màn.
 - **Ảnh lưu local** máy (`ImageService`), Firestore chỉ giữ path. Đổi máy/cài lại = mất ảnh (đúng thiết kế).
 - Widget dùng lại: `StatusChip`, `SectionCard`, `KVRow`, `EmptyState`, `Avatar`, `pickImage()`, `confirmDialog()`, `toast()` trong `lib/widgets/common.dart`. Màu ở `AppColors` (`lib/core/theme.dart`).
 
 ## Luồng chính
 
-Tạo đơn (owner) → notify checker → kho: WAITING→PREPARING→PREPARED→**PACKING**→PACKED → **Xuất phát** (owner/checker, bấm từng đơn hoặc "Xuất phát tất cả" ở tab Kho › Chờ xuất phát hoặc tab Giao hàng › Chờ xuất phát) → `ON_THE_WAY` → **cuối ngày owner đối soát** ở tab Giao hàng › Đang giao: Giao thành công (mở sheet thu tiền, tạo payment) hoặc Không giao được (FAILED/RESCHEDULED/RETURNED; RESCHEDULED quay lại danh sách chờ xuất phát) → công nợ còn lại thu sau (FIFO nhiều đơn qua `Db.collectCustomerDebt`).
+Tạo đơn (owner; bước Xác nhận chọn **giờ xuất phát dự kiến**, để trống thì xếp theo giờ tạo) → notify checker → kho: WAITING→PREPARING→PREPARED→**PACKING**→PACKED → **Xuất phát** (owner/checker, bấm từng đơn hoặc "Xuất phát tất cả" ở tab Kho › Chờ xuất phát hoặc tab Giao hàng › Chờ xuất phát) → `ON_THE_WAY` → **cuối ngày owner đối soát** ở tab Giao hàng › Đang giao: Giao thành công (mở sheet thu tiền, tạo payment) hoặc Không giao được (FAILED/RESCHEDULED/RETURNED; RESCHEDULED quay lại danh sách chờ xuất phát) → công nợ còn lại thu sau (FIFO nhiều đơn qua `Db.collectCustomerDebt`).
 
 Màn `/delivery` (`DeliveryHubScreen`) 3 tab: **Chờ xuất phát** (`Db.ordersWaitingDepart`) · **Đang giao** (`Db.ordersDelivering`, kèm tổng tiền cần thu) · **Xong hôm nay** (`Db.ordersSettledOn`).
 

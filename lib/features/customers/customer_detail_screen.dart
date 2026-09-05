@@ -379,9 +379,11 @@ class _InfoTab extends StatelessWidget {
               leading: Icon(
                   a.isDefault ? Icons.check_circle : Icons.location_on_outlined,
                   color: a.isDefault ? AppColors.success : AppColors.textSecondary),
-              title: Text(a.label,
+              title: Text(a.address,
                   style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text('${a.address}\n${a.receiver} · ${a.phone}'),
+              subtitle: Text(a.hasCarrier
+                  ? '${a.receiver} · ${a.phone}\nNhà xe: ${a.carrierName}'
+                  : '${a.receiver} · ${a.phone}'),
               isThreeLine: true,
             ),
           ),
