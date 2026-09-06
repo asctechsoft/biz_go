@@ -73,7 +73,7 @@ class InvoicePdf {
             _kv('Tạm tính:', money(o.subtotal)),
             if (o.shippingFee != 0) _kv('Phí giao:', money(o.shippingFee)),
             if (o.discount != 0) _kv('Giảm giá:', '- ${money(o.discount)}'),
-            _kv('TỔNG CỘNG:', money(o.total), bold: true, size: 12),
+            _kv('TỔNG CỘNG:', money(o.total), bold: true, size: 16),
             if (o.paidAmount != 0) _kv('Đã thanh toán:', money(o.paidAmount)),
             pw.SizedBox(height: 8),
             _due(o),
@@ -92,7 +92,7 @@ class InvoicePdf {
           pw.SizedBox(height: 16),
           pw.Center(
             child: pw.Text('Cảm ơn quý khách!',
-                style: pw.TextStyle(fontSize: 9)),
+                style: pw.TextStyle(fontSize: 13)),
           ),
         ],
       ),
@@ -130,20 +130,20 @@ class InvoicePdf {
         children: [
           pw.Text(_brand,
               textAlign: pw.TextAlign.center,
-              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+              style: pw.TextStyle(fontSize: 17, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 2),
           pw.Text(shop.title,
               textAlign: pw.TextAlign.center,
-              style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+              style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold)),
           if (shop.phone.isNotEmpty)
             pw.Text('SĐT: ${shop.phone}',
                 textAlign: pw.TextAlign.center,
-                style: const pw.TextStyle(fontSize: 9)),
+                style: const pw.TextStyle(fontSize: 13)),
           pw.SizedBox(height: 10),
           pw.Text('PHIẾU GIAO HÀNG',
               textAlign: pw.TextAlign.center,
               style: pw.TextStyle(
-                  fontSize: 15,
+                  fontSize: 19,
                   fontWeight: pw.FontWeight.bold,
                   letterSpacing: 1)),
           if (o.packageCode != null) ...[
@@ -152,7 +152,7 @@ class InvoicePdf {
                 'Mã kiện hàng: ${o.packageCode}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
                 textAlign: pw.TextAlign.center,
                 style: pw.TextStyle(
-                    fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                    fontSize: 16, fontWeight: pw.FontWeight.bold)),
           ]
           // Đơn đóng trước khi đổi sang mã kiện tự động.
           else if (o.packageCount != null) ...[
@@ -161,7 +161,7 @@ class InvoicePdf {
                 'Số kiện: ${o.packageCount}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
                 textAlign: pw.TextAlign.center,
                 style: pw.TextStyle(
-                    fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                    fontSize: 16, fontWeight: pw.FontWeight.bold)),
           ],
         ],
         ),
@@ -196,14 +196,14 @@ class InvoicePdf {
                         // `InvoiceScreen`, phải khớp với bản xem trước.
                         pw.Text(it.variantLabel,
                             style: pw.TextStyle(
-                                fontSize: 10,
+                                fontSize: 14,
                                 fontWeight: pw.FontWeight.bold)),
                         pw.Text(
                             showMoney
                                 ? '${it.packagingName} · ${money(it.unitPrice)}'
                                 : it.packagingName,
                             style: const pw.TextStyle(
-                                fontSize: 8, color: PdfColors.grey700)),
+                                fontSize: 12, color: PdfColors.grey700)),
                       ],
                     ),
                   ),
@@ -211,7 +211,7 @@ class InvoicePdf {
                     flex: 2,
                     child: pw.Text('${it.quantity}',
                         textAlign: pw.TextAlign.center,
-                        style: const pw.TextStyle(fontSize: 10)),
+                        style: const pw.TextStyle(fontSize: 14)),
                   ),
                   if (showMoney)
                     pw.Expanded(
@@ -219,7 +219,7 @@ class InvoicePdf {
                       child: pw.Text(money(it.lineTotal),
                           textAlign: pw.TextAlign.right,
                           style: pw.TextStyle(
-                              fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                              fontSize: 14, fontWeight: pw.FontWeight.bold)),
                     ),
                 ],
               ),
@@ -236,10 +236,10 @@ class InvoicePdf {
           children: [
             pw.Text('CẦN THU:',
                 style: pw.TextStyle(
-                    fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                    fontSize: 16, fontWeight: pw.FontWeight.bold)),
             pw.Text(money(o.remaining > 0 ? o.remaining : 0),
                 style: pw.TextStyle(
-                    fontSize: 14,
+                    fontSize: 18,
                     fontWeight: pw.FontWeight.bold,
                     color: PdfColors.red700)),
           ],
@@ -251,12 +251,12 @@ class InvoicePdf {
           pw.Expanded(
             child: pw.Text('Người giao\n(ký, ghi rõ họ tên)',
                 textAlign: pw.TextAlign.center,
-                style: const pw.TextStyle(fontSize: 9)),
+                style: const pw.TextStyle(fontSize: 13)),
           ),
           pw.Expanded(
             child: pw.Text('Người nhận\n(ký, ghi rõ họ tên)',
                 textAlign: pw.TextAlign.center,
-                style: const pw.TextStyle(fontSize: 9)),
+                style: const pw.TextStyle(fontSize: 13)),
           ),
         ],
       );
@@ -264,10 +264,10 @@ class InvoicePdf {
   static pw.Widget _th(String t, {pw.TextAlign align = pw.TextAlign.left}) =>
       pw.Text(t,
           textAlign: align,
-          style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold));
+          style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold));
 
   static pw.Widget _kv(String k, String v,
-          {bool bold = false, double size = 10}) =>
+          {bool bold = false, double size = 14}) =>
       pw.Padding(
         padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
         child: pw.Row(

@@ -166,7 +166,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         _brand,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: 18,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -175,14 +175,14 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         shop.title,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
-                          fontSize: 13,
+                          fontSize: 15,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                       if (shop.phone.isNotEmpty)
                         Text(
                           'SĐT: ${shop.phone}',
-                          style: const TextStyle(fontSize: 12),
+                          style: const TextStyle(fontSize: 14),
                         ),
                     ],
                   ),
@@ -192,7 +192,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   child: Text(
                     'PHIẾU GIAO HÀNG',
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 20,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 1,
                     ),
@@ -206,7 +206,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       'Mã kiện hàng: ${o.packageCode}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w600,
                         letterSpacing: .5,
                       ),
@@ -221,7 +221,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       'Số kiện: ${o.packageCount}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -262,7 +262,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         'Mặt hàng',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          fontSize: 12,
+                          fontSize: 14,
                         ),
                       ),
                     ),
@@ -273,7 +273,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          fontSize: 12,
+                          fontSize: 14,
                         ),
                       ),
                     ),
@@ -285,7 +285,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                           textAlign: TextAlign.right,
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                            fontSize: 14,
                           ),
                         ),
                       ),
@@ -310,7 +310,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                               Text(
                                 it.variantLabel,
                                 style: const TextStyle(
-                                  fontSize: 13,
+                                  fontSize: 15,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -319,7 +319,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                     ? '${it.packagingName} · ${money(it.unitPrice)}'
                                     : it.packagingName,
                                 style: const TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 13,
                                   color: AppColors.textSecondary,
                                 ),
                               ),
@@ -331,7 +331,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                           child: Text(
                             '${it.quantity}',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 13),
+                            style: const TextStyle(fontSize: 15),
                           ),
                         ),
                         if (showMoney)
@@ -341,7 +341,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                               money(it.lineTotal),
                               textAlign: TextAlign.right,
                               style: const TextStyle(
-                                fontSize: 13,
+                                fontSize: 15,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -373,14 +373,14 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         const Text(
                           'CẦN THU:',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 18,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                         Text(
                           money(o.remaining > 0 ? o.remaining : 0),
                           style: const TextStyle(
-                            fontSize: 18,
+                            fontSize: 20,
                             fontWeight: FontWeight.w900,
                             color: AppColors.danger,
                           ),
@@ -405,14 +405,14 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       child: Text(
                         'Người giao\n(ký, ghi rõ họ tên)',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11),
+                        style: TextStyle(fontSize: 13),
                       ),
                     ),
                     Expanded(
                       child: Text(
                         'Người nhận\n(ký, ghi rõ họ tên)',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11),
+                        style: TextStyle(fontSize: 13),
                       ),
                     ),
                   ],
@@ -421,7 +421,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 const Center(
                   child: Text(
                     'Cảm ơn quý khách!',
-                    style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                    style: TextStyle(fontSize: 14, fontStyle: FontStyle.italic),
                   ),
                 ),
               ],
@@ -458,7 +458,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             Text(
               k,
               style: TextStyle(
-                fontSize: big ? 15 : 13,
+                fontSize: big ? 17 : 15,
                 fontWeight: bold ? FontWeight.w800 : FontWeight.w400,
               ),
             ),
@@ -468,7 +468,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 v,
                 textAlign: TextAlign.right,
                 style: TextStyle(
-                  fontSize: big ? 15 : 13,
+                  fontSize: big ? 17 : 15,
                   fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
                 ),
               ),
@@ -483,7 +483,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       '- - - - - - - - - - - - - - - - - - - - - - - - -',
       maxLines: 1,
       overflow: TextOverflow.clip,
-      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+      style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
     ),
   );
 }
