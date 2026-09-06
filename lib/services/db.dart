@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 import '../core/enums.dart';
@@ -248,10 +249,23 @@ class Db {
   }
 
   // ---------- Customers ----------
-  Stream<List<Customer>> customers() => _customers
-      .orderBy('nameLower')
-      .snapshots()
-      .map((s) => s.docs.map((d) => Customer.fromMap(d.id, d.data())).toList());
+  // KHÔNG orderBy('nameLower'): doc khách cũ chưa có field đó bị Firestore
+  // loại thẳng khỏi kết quả → khách "biến mất". Lấy hết rồi sort trong Dart
+  // (đúng convention tránh index). Doc nào parse lỗi thì bỏ qua + log, đừng
+  // để một doc hỏng làm chết cả stream (spinner quay vô tận).
+  Stream<List<Customer>> customers() => _customers.snapshots().map((s) {
+        final list = <Customer>[];
+        for (final d in s.docs) {
+          try {
+            list.add(Customer.fromMap(d.id, d.data()));
+          } catch (e) {
+            debugPrint('CUSTOMER PARSE ERROR ${d.id}: $e');
+          }
+        }
+        list.sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        return list;
+      });
 
   Stream<Customer> customer(String id) => _customers
       .doc(id)

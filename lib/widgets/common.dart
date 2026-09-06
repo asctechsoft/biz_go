@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -56,7 +56,7 @@ class LocalImage extends StatelessWidget {
         height: size,
         color: AppColors.primaryLight,
         child: ok
-            ? Image.file(File(path!), fit: BoxFit.cover)
+            ? ImageService.imageWidget(path!, fit: BoxFit.cover)
             : Icon(placeholder, color: AppColors.primary, size: size * 0.45),
       ),
     );
@@ -142,7 +142,7 @@ class Avatar extends StatelessWidget {
       return CircleAvatar(
         radius: size / 2,
         backgroundColor: AppColors.primaryLight,
-        backgroundImage: FileImage(File(imagePath!)),
+        backgroundImage: ImageService.imageProvider(imagePath!),
       );
     }
     final initials = name.trim().isEmpty
@@ -645,6 +645,12 @@ class SheetHeader extends StatelessWidget {
 
 /// Chọn nguồn ảnh (chụp / thư viện) rồi nén, trả về đường dẫn local.
 Future<String?> pickImage(BuildContext context, ImageService svc) async {
+  // Bản web không lưu ảnh local (không có filesystem như máy) → báo rõ, khỏi
+  // mở sheet chọn nguồn cho hụt.
+  if (kIsWeb) {
+    toast(context, 'Bản web chưa hỗ trợ tải ảnh — dùng app điện thoại để thêm ảnh.');
+    return null;
+  }
   final fromCamera = await showModalBottomSheet<bool>(
     context: context,
     builder: (ctx) => SafeArea(

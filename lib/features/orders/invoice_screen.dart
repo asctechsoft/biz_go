@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/error_text.dart';
+import '../../core/file_share.dart';
 import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../models/order.dart';
@@ -107,10 +109,26 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
           IconButton(
             icon: const Icon(Icons.print),
             tooltip: 'In',
-            onPressed: () => toast(
-              context,
-              'Gửi lệnh in ${o.code}${copies > 1 ? ' · $copies bản' : ''} tới máy in Bluetooth (kết nối máy để in thật)',
-            ),
+            // Web (PC nối máy in): dựng PDF rồi mở hộp thoại in trình duyệt →
+            // in thẳng. Android vẫn là preview Bluetooth (chưa làm in thật).
+            onPressed: () async {
+              if (kIsWeb) {
+                try {
+                  final bytes =
+                      await InvoicePdf.build(o, shop, showMoney: showMoney);
+                  await printPdfBytes(bytes, docName: 'Phieu_${o.code}');
+                } catch (e) {
+                  if (context.mounted) {
+                    toast(context, friendlyError(e, fallback: 'In không thành công.'));
+                  }
+                }
+              } else {
+                toast(
+                  context,
+                  'Gửi lệnh in ${o.code}${copies > 1 ? ' · $copies bản' : ''} tới máy in Bluetooth (kết nối máy để in thật)',
+                );
+              }
+            },
           ),
         ],
       ),

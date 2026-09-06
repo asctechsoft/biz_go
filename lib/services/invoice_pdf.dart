@@ -1,12 +1,10 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:share_plus/share_plus.dart';
 
+import '../core/file_share.dart';
 import '../core/formatters.dart';
 import '../models/order.dart';
 import '../models/shop_info.dart';
@@ -102,21 +100,18 @@ class InvoicePdf {
     return doc.save();
   }
 
-  /// Dựng PDF, ghi ra file tạm rồi mở hộp chia sẻ để người dùng lưu về máy
-  /// hoặc gửi Zalo/Drive. Trả về file đã ghi.
-  static Future<File> export(Order o, ShopInfo shop,
+  /// Dựng PDF rồi lưu/chia sẻ: Android ghi file tạm + mở hộp chia sẻ (Zalo/
+  /// Drive/lưu máy), web tải file về qua trình duyệt. Tách nền tảng ở
+  /// [saveAndShareBytes] để file này không phải đụng `dart:io`.
+  static Future<void> export(Order o, ShopInfo shop,
       {bool showMoney = true}) async {
     final bytes = await build(o, shop, showMoney: showMoney);
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/Phieu_${o.code}.pdf')
-      ..createSync(recursive: true)
-      ..writeAsBytesSync(bytes);
-
-    await Share.shareXFiles(
-      [XFile(file.path, mimeType: 'application/pdf')],
+    await saveAndShareBytes(
+      bytes,
+      filename: 'Phieu_${o.code}.pdf',
+      mime: 'application/pdf',
       text: 'Phiếu giao hàng ${o.code} - ${o.customerName}',
     );
-    return file;
   }
 
   // ---------- Các mảnh dựng phiếu ----------

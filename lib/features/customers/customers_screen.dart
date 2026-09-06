@@ -41,6 +41,20 @@ class _CustomersScreenState extends State<CustomersScreen> {
             child: StreamBuilder<List<Customer>>(
               stream: db.customers(),
               builder: (context, snap) {
+                if (snap.hasError) {
+                  debugPrint('CUSTOMERS STREAM ERROR: ${snap.error}');
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        friendlyError(snap.error!,
+                            fallback: 'Không tải được danh sách khách hàng.'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ),
+                  );
+                }
                 if (!snap.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }

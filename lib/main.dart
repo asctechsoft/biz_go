@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -28,6 +29,9 @@ void main() async {
   await initializeDateFormatting('vi_VN');
   runApp(const BizGoApp());
 }
+
+/// Bề rộng cột app trên web (px). Cỡ điện thoại lớn để layout không vỡ.
+const double _kWebPhoneWidth = 460;
 
 class BizGoApp extends StatefulWidget {
   const BizGoApp({super.key});
@@ -68,18 +72,46 @@ class _BizGoAppState extends State<BizGoApp> {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        builder: (context, child) => MediaQuery(
-          // Ép giờ 24h cho time picker: app hiển thị giờ bằng
-          // `fmtTime` (DateFormat 'HH:mm') ở mọi nơi, để picker chạy 12h
-          // SÁNG/CHIỀU theo cài đặt máy là lệch với chính nó.
-          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-          // Chạm ra ngoài ô nhập → bỏ focus, ẩn bàn phím (toàn app).
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-            child: child,
-          ),
-        ),
+        builder: (context, child) {
+          final app = MediaQuery(
+            // Ép giờ 24h cho time picker: app hiển thị giờ bằng
+            // `fmtTime` (DateFormat 'HH:mm') ở mọi nơi, để picker chạy 12h
+            // SÁNG/CHIỀU theo cài đặt máy là lệch với chính nó.
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            // Chạm ra ngoài ô nhập → bỏ focus, ẩn bàn phím (toàn app).
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+              child: child,
+            ),
+          );
+          // App thiết kế cho điện thoại. Trên web full màn, giữ UI ở cột rộng
+          // cỡ điện thoại, canh giữa, nền xám 2 bên như khung máy — user khỏi
+          // phải thu nhỏ cửa sổ. CHỈ web (`kIsWeb`); mobile trả app nguyên vẹn.
+          if (!kIsWeb) return app;
+          return ColoredBox(
+            color: const Color(0xFFE6E7EB),
+            child: Center(
+              child: SizedBox(
+                width: _kWebPhoneWidth,
+                height: double.infinity,
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0x1A000000),
+                        blurRadius: 24,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: app,
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

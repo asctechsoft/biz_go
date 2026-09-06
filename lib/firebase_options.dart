@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart'
 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
-    if (kIsWeb) return android;
+    if (kIsWeb) return web;
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
@@ -16,6 +16,18 @@ class DefaultFirebaseOptions {
         return android;
     }
   }
+
+  // Cấu hình app web (Firebase console › Project settings › Web app).
+  // Dùng CÙNG project bizgo-877df với Android → chung Firestore/Auth/dữ liệu.
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyB0JcrzqsnEEykxNHXCFeFvtMcHn068Dic',
+    appId: '1:844322247816:web:b837e195392346a2a73b3d',
+    messagingSenderId: '844322247816',
+    projectId: 'bizgo-877df',
+    authDomain: 'bizgo-877df.firebaseapp.com',
+    storageBucket: 'bizgo-877df.firebasestorage.app',
+    measurementId: 'G-4EYMJXVR6L',
+  );
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDLRIRx756tGgu1yYGAqudw59wvrFLuw3I',

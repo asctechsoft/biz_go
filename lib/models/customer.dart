@@ -113,10 +113,13 @@ class Customer {
         addresses: ((m['addresses'] as List?) ?? [])
             .map((e) => CustomerAddress.fromMap(Map<String, dynamic>.from(e)))
             .toList(),
-        totalPurchased: (m['totalPurchased'] ?? 0) as int,
-        totalPaid: (m['totalPaid'] ?? 0) as int,
-        debt: (m['debt'] ?? 0) as int,
-        orderCount: (m['orderCount'] ?? 0) as int,
+        // `as num?)?.toInt()` chịu được cả int lẫn double (Firestore đôi khi
+        // lưu số thành double) — cast cứng `as int` gặp double sẽ throw, làm
+        // chết cả stream danh sách khách.
+        totalPurchased: (m['totalPurchased'] as num?)?.toInt() ?? 0,
+        totalPaid: (m['totalPaid'] as num?)?.toInt() ?? 0,
+        debt: (m['debt'] as num?)?.toInt() ?? 0,
+        orderCount: (m['orderCount'] as num?)?.toInt() ?? 0,
       );
 
   Map<String, dynamic> toMap() => {

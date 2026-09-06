@@ -1,11 +1,10 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../core/enums.dart';
+import '../core/file_share.dart';
 import '../models/customer.dart';
 import '../models/order.dart';
 
@@ -42,15 +41,13 @@ class ExcelExport {
     final bytes = excel.encode();
     if (bytes == null) return;
 
-    final dir = await getTemporaryDirectory();
     final stamp = '${_d.format(from)}_${_d.format(to)}'.replaceAll('/', '-');
-    final path = '${dir.path}/BaoCao_$stamp.xlsx';
-    final file = File(path)
-      ..createSync(recursive: true)
-      ..writeAsBytesSync(bytes);
-
-    await Share.shareXFiles(
-      [XFile(file.path, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
+    // Android: file tạm + hộp chia sẻ. Web: tải file về trình duyệt.
+    await saveAndShareBytes(
+      Uint8List.fromList(bytes),
+      filename: 'BaoCao_$stamp.xlsx',
+      mime:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       text: 'Báo cáo BizGo ${_d.format(from)} - ${_d.format(to)}',
     );
   }
