@@ -3,11 +3,9 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
-import '../../core/error_text.dart';
 import '../../core/permissions.dart';
 import '../../core/theme.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/biometric_service.dart';
 import '../../services/db.dart';
 import '../../widgets/common.dart';
 
@@ -151,20 +149,6 @@ class MoreScreen extends StatelessWidget {
             title: const Text('Phiên bản'),
             trailing: const Text('1.0.0'),
           ),
-          if (role != null && Perm.owner(role))
-            ListTile(
-              leading: const Icon(
-                Icons.delete_forever,
-                color: AppColors.danger,
-              ),
-              title: const Text(
-                'Xóa toàn bộ dữ liệu',
-                style: TextStyle(color: AppColors.danger),
-              ),
-              subtitle: const Text(
-                  'Đơn, khách, sản phẩm, công nợ, người dùng...'),
-              onTap: () => _clearData(context),
-            ),
           ListTile(
             leading: const Icon(Icons.logout, color: AppColors.danger),
             title: const Text(
@@ -260,53 +244,6 @@ class MoreScreen extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  Future<void> _clearData(BuildContext context) async {
-    final db = context.read<Db>();
-    final auth = context.read<AuthProvider>();
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await confirmDialog(
-      context,
-      title: 'Xóa toàn bộ dữ liệu',
-      message:
-          'Xóa TẤT CẢ đơn hàng, khách, sản phẩm, công nợ, nhật ký VÀ '
-          'hồ sơ người dùng? KHÔNG THỂ hoàn tác. App sẽ đăng xuất, đăng nhập '
-          'lại bằng tài khoản mặc định 0900000000 / 123456 rồi thiết lập lại.',
-      confirm: 'Xóa hết',
-    );
-    if (!ok) return;
-
-    // Snackbar tiến trình (không push dialog → tránh khóa navigator).
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Đang xóa dữ liệu...'),
-        duration: Duration(minutes: 1),
-      ),
-    );
-    try {
-      await db.clearAllData();
-      // Hồ sơ user vừa bị xoá → phiên hiện tại không còn hợp lệ. Đăng xuất và
-      // bỏ thông tin vân tay đã lưu; purgeToken: false để PushService không
-      // ghi lại doc users vừa xoá.
-      await BiometricService().clear();
-      await auth.signOut(purgeToken: false);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Đã xóa toàn bộ dữ liệu. Đăng nhập lại bằng 0900000000 / 123456 '
-            'rồi thiết lập tài khoản.',
-          ),
-        ),
-      );
-    } catch (e) {
-      messenger.hideCurrentSnackBar();
-      debugPrint('WIPE-DATA ERROR: $e');
-      messenger.showSnackBar(SnackBar(
-          content: Text(friendlyError(e,
-              fallback: 'Xoá dữ liệu không thành công. Thử lại giúp tôi.'))));
-    }
   }
 
   Widget _tile(

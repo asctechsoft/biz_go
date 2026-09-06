@@ -37,22 +37,8 @@ class SeedService {
   Future<void> seedAll() async {
     if (await isSeeded()) return;
 
-    // Categories
-    final cats = <String, String>{};
-    for (final name in ['Khoai lang', 'Ngô chiên', 'Cùi bưởi', 'Khoai dẻo']) {
-      final ref = await _db.collection('categories').add({'name': name});
-      cats[name] = ref.id;
-    }
-
     Product p(String name, String cat, String desc, List<ProductVariant> v) =>
-        Product(
-          id: '',
-          name: name,
-          description: desc,
-          categoryId: cats[cat]!,
-          categoryName: cat,
-          variants: v,
-        );
+        Product(id: '', name: name, description: desc, variants: v);
 
     ProductVariant vr(String name, List<Packaging> pk) =>
         ProductVariant(name: name, packagings: pk);

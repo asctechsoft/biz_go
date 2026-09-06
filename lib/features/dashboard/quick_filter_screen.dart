@@ -49,7 +49,14 @@ class _QuickFilterScreenState extends State<QuickFilterScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Lọc nhanh')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        // Chừa chỗ cho thanh điều hướng Android, không thì nút "Xóa bộ lọc"
+        // cuối trang bị che.
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + MediaQuery.of(context).padding.bottom,
+        ),
         children: [
           const _Label('Khoảng thời gian'),
           Wrap(

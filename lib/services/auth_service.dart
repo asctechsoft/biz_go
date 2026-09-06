@@ -300,6 +300,74 @@ class AuthService {
     return u;
   }
 
+  /// Chủ đổi **SĐT đăng nhập** của một tài khoản khác.
+  ///
+  /// SĐT chính là danh tính đăng nhập (`<sđt>@bizgo.local`) nên không "sửa"
+  /// tại chỗ được: phải tạo tài khoản Auth MỚI rồi chuyển hồ sơ sang uid mới.
+  /// Chủ không biết mật khẩu của nhân viên nên buộc phải đặt mật khẩu mới.
+  ///
+  /// Tạo tài khoản mới TRƯỚC, xoá hồ sơ cũ SAU: SĐT mới trùng thì ném lỗi lúc
+  /// chưa phá gì cả, người dùng vẫn đăng nhập được bằng số cũ.
+  ///
+  /// Hệ quả không tránh được: tài khoản Auth cũ chỉ xoá được bằng Admin SDK
+  /// nên **SĐT cũ bị chiếm vĩnh viễn**, không tạo lại được. Người đó cũng
+  /// không đăng nhập bằng số cũ được nữa vì hồ sơ đã xoá (`signIn` từ chối
+  /// account không có hồ sơ).
+  Future<AppUser> changePhoneAsAdmin({
+    required AppUser target,
+    required String newPhone,
+    required String newPassword,
+    required String name,
+    required UserRole role,
+  }) async {
+    final phone = normalizePhone(newPhone);
+    if (phone == normalizePhone(target.phone)) {
+      throw FirebaseAuthException(
+        code: 'same-phone',
+        message: 'Số điện thoại không thay đổi.',
+      );
+    }
+
+    FirebaseApp secondary;
+    try {
+      secondary = await Firebase.initializeApp(
+        name: 'admin_ops',
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } catch (_) {
+      secondary = Firebase.app('admin_ops');
+    }
+    final String newUid;
+    try {
+      final auth2 = FirebaseAuth.instanceFor(app: secondary);
+      final cred = await auth2.createUserWithEmailAndPassword(
+        email: _emailOf(phone),
+        password: newPassword,
+      );
+      newUid = cred.user!.uid;
+      await auth2.signOut();
+    } finally {
+      await secondary.delete();
+    }
+
+    final u = AppUser(
+      id: newUid,
+      name: name,
+      phone: phone,
+      role: role,
+      active: target.active,
+    );
+    await _db.collection('users').doc(newUid).set(u.toMap());
+    // Hồ sơ mới đã dùng được rồi — lỗi dọn dẹp chỉ log, KHÔNG throw, kẻo báo
+    // thất bại trong khi tài khoản mới đã tạo xong và SĐT mới đã bị chiếm.
+    try {
+      await _db.collection('users').doc(target.id).delete();
+    } catch (e) {
+      debugPrint('changePhoneAsAdmin: xoá hồ sơ cũ lỗi: $e');
+    }
+    return u;
+  }
+
   /// Chủ tạo tài khoản cho nhân viên (Kiểm hàng/Kiểm kho) mà KHÔNG bị đăng xuất.
   /// Dùng một FirebaseApp phụ để tạo user, xong huỷ app phụ.
   Future<AppUser> createUserAsAdmin({

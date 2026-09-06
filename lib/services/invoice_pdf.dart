@@ -63,6 +63,9 @@ class InvoicePdf {
             if (o.deliveryCarrierPhone.isNotEmpty)
               _kv('SĐT nhà xe:', o.deliveryCarrierPhone),
           ],
+          // Dặn dò cố định của địa chỉ ("gọi trước khi tới"...).
+          if (o.deliveryAddressNote.isNotEmpty)
+            _kv('Lưu ý địa chỉ:', o.deliveryAddressNote),
           pw.SizedBox(height: 8),
           _dashed(),
           _items(o, showMoney),
@@ -194,11 +197,15 @@ class InvoicePdf {
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Text(it.displayName,
-                            style: const pw.TextStyle(fontSize: 10)),
+                        // Phân loại làm tên mặt hàng — xem ghi chú ở
+                        // `InvoiceScreen`, phải khớp với bản xem trước.
+                        pw.Text(it.variantLabel,
+                            style: pw.TextStyle(
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold)),
                         pw.Text(
                             showMoney
-                                ? '${money(it.unitPrice)}/${it.packagingName}'
+                                ? '${it.packagingName} · ${money(it.unitPrice)}'
                                 : it.packagingName,
                             style: const pw.TextStyle(
                                 fontSize: 8, color: PdfColors.grey700)),

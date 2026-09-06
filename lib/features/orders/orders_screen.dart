@@ -363,15 +363,38 @@ class _OrdersScreenState extends State<OrdersScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(o.customerName),
+            // Ghi rõ "tạo" vì ngay dưới có thể là giờ xuất phát — hai mốc giờ
+            // trần trụi cạnh nhau thì không biết cái nào là cái nào.
             Text(
               _showMoney
-                  ? '${money(o.total)} · ${fmtTime(o.createdAt)}'
-                  : fmtTime(o.createdAt),
+                  ? '${money(o.total)} · tạo ${fmtTime(o.createdAt)}'
+                  : 'Tạo lúc ${fmtTime(o.createdAt)}',
               style: const TextStyle(
                 fontSize: 12,
                 color: AppColors.textSecondary,
               ),
             ),
+            // Giờ dự kiến xuất phát — chính là thứ quyết định thứ tự đơn
+            // trong ngày, nên phải thấy ngay ở danh sách.
+            if (o.plannedDepartAt != null)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.schedule,
+                      size: 13, color: AppColors.primary),
+                  const SizedBox(width: 3),
+                  Flexible(
+                    child: Text(
+                      'Xuất phát ${fmtDepartAt(o.plannedDepartAt)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
         trailing: StatusChip(ui, dense: true),

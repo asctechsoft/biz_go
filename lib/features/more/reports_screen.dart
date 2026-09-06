@@ -131,7 +131,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           final byProduct = <String, (int qty, int revenue)>{};
           for (final o in active) {
             for (final it in o.items) {
-              final k = it.displayName;
+              final k = it.reportLabel;
               final prev = byProduct[k] ?? (0, 0);
               byProduct[k] =
                   (prev.$1 + it.quantity, prev.$2 + it.lineTotal);

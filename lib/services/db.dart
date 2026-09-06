@@ -18,8 +18,6 @@ import '../models/shop_info.dart';
 class Db {
   final _db = FirebaseFirestore.instance;
 
-  CollectionReference<Map<String, dynamic>> get _categories =>
-      _db.collection('categories');
   CollectionReference<Map<String, dynamic>> get _products =>
       _db.collection('products');
   CollectionReference<Map<String, dynamic>> get _customers =>
@@ -201,26 +199,6 @@ class Db {
       .snapshots()
       .map((s) => s.docs.map((d) => AuditLog.fromMap(d.id, d.data())).toList());
 
-  // ---------- Categories ----------
-  Stream<List<ProductCategory>> categories() => _categories
-      .orderBy('name')
-      .snapshots()
-      .map(
-        (s) =>
-            s.docs.map((d) => ProductCategory.fromMap(d.id, d.data())).toList(),
-      );
-
-  Future<String> upsertCategory(ProductCategory c) async {
-    if (c.id.isEmpty) {
-      final ref = await _categories.add(c.toMap());
-      return ref.id;
-    }
-    await _categories.doc(c.id).set(c.toMap());
-    return c.id;
-  }
-
-  Future<void> deleteCategory(String id) => _categories.doc(id).delete();
-
   // ---------- Products ----------
   Stream<List<Product>> products() => _products
       .orderBy('nameLower')
@@ -392,8 +370,92 @@ class Db {
     }
   }
 
-  Stream<Order> order(String id) =>
-      _orders.doc(id).snapshots().map((d) => Order.fromMap(d.id, d.data()!));
+  /// Trả `null` khi doc không còn (đơn bị xoá) — KHÔNG `data()!`, vì đơn xoá
+  /// khi màn chi tiết đang mở hoặc mở từ thông báo cũ là crash null-check.
+  Stream<Order?> order(String id) => _orders
+      .doc(id)
+      .snapshots()
+      .map((d) => d.exists ? Order.fromMap(d.id, d.data()!) : null);
+
+  /// Đơn có được **xoá hẳn** không: chỉ khi vừa tạo và chưa ai đụng vào.
+  ///
+  /// Dùng trạng thái chứ KHÔNG dùng mốc thời gian ("tạo trong 10 phút"): kho
+  /// nhanh tay thì 3 phút đã soạn xong hàng — xoá lúc đó là sai; ngược lại
+  /// phát hiện nhầm sau nửa tiếng mà chưa ai động vào thì xoá vẫn an toàn.
+  ///
+  /// Đã thu tiền thì KHÔNG xoá — phải huỷ đơn để còn ghi payment hoàn.
+  static bool canDelete(Order o) =>
+      o.orderStatus == OrderStatus.NEW &&
+      o.warehouseStatus == WarehouseStatus.WAITING &&
+      o.deliveryStatus == DeliveryStatus.WAITING_ASSIGNMENT &&
+      o.paidAmount == 0;
+
+  /// Xoá hẳn đơn tạo nhầm (khác **huỷ đơn**: huỷ giữ lại dấu vết, xoá thì mất
+  /// hẳn khỏi `orders`).
+  ///
+  /// Trả lại đúng những gì `createOrder` đã cộng vào tổng hợp khách, và ghi
+  /// `audit_logs` kèm **toàn bộ nội dung đơn** — doc gốc biến mất nên nhật ký
+  /// là chỗ duy nhất còn tra lại được.
+  Future<void> deleteOrder(
+    Order o, {
+    required String actorId,
+    required String actorName,
+  }) async {
+    if (!canDelete(o)) {
+      throw Exception(
+        'Đơn đã vào quy trình hoặc đã thu tiền — dùng "Hủy đơn" thay vì xoá.',
+      );
+    }
+    // Chặn thêm một lớp: có payment nào bám vào đơn thì xoá đơn là mất đối
+    // chứng của khoản tiền đó.
+    final pays = await _payments.where('orderId', isEqualTo: o.id).limit(1).get();
+    if (pays.docs.isNotEmpty) {
+      throw Exception('Đơn đã có phiếu thu — dùng "Hủy đơn" thay vì xoá.');
+    }
+
+    final orderRef = _orders.doc(o.id);
+    final custRef = _customers.doc(o.customerId);
+    Map<String, dynamic>? snapshotData;
+
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(orderRef);
+      if (!snap.exists) return; // ai đó vừa xoá rồi
+      final cur = Order.fromMap(snap.id, snap.data()!);
+      if (!canDelete(cur)) {
+        throw Exception('Đơn vừa được xử lý nên không xoá được nữa.');
+      }
+      snapshotData = snap.data();
+
+      final outstanding = cur.total - cur.paidAmount;
+      tx.delete(orderRef);
+      // Gỡ đúng phần `createOrder` đã cộng vào.
+      tx.set(custRef, {
+        'orderCount': FieldValue.increment(-1),
+        'totalPurchased': FieldValue.increment(-cur.total),
+        'totalPaid': FieldValue.increment(-cur.paidAmount),
+        'debt': FieldValue.increment(-(outstanding > 0 ? outstanding : 0)),
+      }, SetOptions(merge: true));
+    });
+
+    if (snapshotData == null) return; // đã bị xoá từ trước
+    await _audit(
+      action: 'delete_order',
+      entityType: 'order',
+      entityId: o.id,
+      actorId: actorId,
+      actorName: actorName,
+      before: snapshotData,
+      note: 'Xoá đơn ${o.code} · ${o.customerName} · ${money(o.total)}',
+    );
+    await _notify(
+      title: 'Đơn ${o.code} đã bị xoá',
+      body: '${o.customerName} · tạo nhầm',
+      refType: NotifRefType.order,
+      refId: o.id,
+      roles: {UserRole.checker, UserRole.warehouse},
+      icon: 'fail',
+    );
+  }
 
   Stream<List<Order>> ordersByCustomer(String customerId) => _orders
       .where('customerId', isEqualTo: customerId)
@@ -542,6 +604,7 @@ class Db {
       deliveryMapUrl: draft.deliveryMapUrl,
       deliveryCarrierName: draft.deliveryCarrierName,
       deliveryCarrierPhone: draft.deliveryCarrierPhone,
+      deliveryAddressNote: draft.deliveryAddressNote,
       items: draft.items,
       shippingFee: draft.shippingFee,
       discount: draft.discount,
@@ -574,7 +637,7 @@ class Db {
 
     await _notify(
       title: 'Đơn mới ${order.code}',
-      body: order.items.isNotEmpty ? order.items.first.displayName : '',
+      body: order.items.isNotEmpty ? order.items.first.reportLabel : '',
       refType: NotifRefType.order,
       refId: ref.id,
       roles: {UserRole.checker},
@@ -595,6 +658,122 @@ class Db {
       note: '${order.customerName} · ${money(order.total)}',
     );
     return order;
+  }
+
+  /// Sửa đơn **chưa xuất phát**: thêm/bớt mặt hàng, đổi số lượng, đổi giá,
+  /// phí giao, giảm giá, ghi chú, giờ xuất phát dự kiến.
+  ///
+  /// KHÔNG đụng `prepaid`/`paidAmount` — tiền đã thu là bất biến (xem quy ước
+  /// payment). Chỉ **tổng đơn** đổi, nên phải chỉnh lại `remaining`,
+  /// `paymentStatus` và **công nợ khách** theo đúng phần chênh, hết.
+  ///
+  /// Chạy trong transaction và đọc lại đơn từ Firestore trước khi ghi: hai
+  /// người cùng sửa, hoặc kho vừa đóng hàng xong trong lúc màn sửa đang mở,
+  /// thì phải chặn chứ không ghi đè bằng dữ liệu cũ trên máy.
+  Future<void> editOrder({
+    required Order order,
+    required List<OrderItem> items,
+    required int shippingFee,
+    required int discount,
+    required String note,
+    required String deliveryNote,
+    DateTime? plannedDepartAt,
+    required String actorId,
+    required String actorName,
+  }) async {
+    if (items.isEmpty) throw Exception('Đơn phải có ít nhất một mặt hàng.');
+
+    final orderRef = _orders.doc(order.id);
+    final custRef = _customers.doc(order.customerId);
+    var summary = '';
+
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(orderRef);
+      final cur = Order.fromMap(snap.id, snap.data()!);
+      if (cur.orderStatus == OrderStatus.CANCELLED) {
+        throw Exception('Đơn đã hủy nên không sửa được.');
+      }
+      if (!_waitingDepart.contains(cur.deliveryStatus)) {
+        throw Exception(
+          'Đơn đã xuất phát nên không sửa được nữa — hàng đang trên đường.',
+        );
+      }
+
+      final subtotal = items.fold<int>(0, (s, i) => s + i.lineTotal);
+      final total = subtotal + shippingFee - discount;
+      final paid = cur.paidAmount;
+
+      // Công nợ khách = tổng phần còn phải thu của từng đơn, nên chỉ dịch đúng
+      // phần chênh. Kẹp 0 như `cancelOrder` để khách trả dư không làm nợ âm.
+      final oldOutstanding = cur.total - paid > 0 ? cur.total - paid : 0;
+      final newOutstanding = total - paid > 0 ? total - paid : 0;
+
+      var ps = cur.paymentStatus;
+      // COD / Công nợ / Đã hoàn tiền là trạng thái người dùng tự chốt (hoặc do
+      // hủy đơn) — đừng tự đổi. Còn lại suy ra từ số đã thu so với tổng MỚI.
+      if (ps != PaymentStatus.COD &&
+          ps != PaymentStatus.DEBT &&
+          ps != PaymentStatus.REFUNDED) {
+        ps = paid <= 0
+            ? PaymentStatus.UNPAID
+            : (paid >= total ? PaymentStatus.PAID : PaymentStatus.PARTIAL);
+      }
+
+      summary = '${cur.items.length} → ${items.length} mặt hàng · '
+          '${money(cur.total)} → ${money(total)}';
+
+      tx.update(orderRef, {
+        'items': items.map((e) => e.toMap()).toList(),
+        'shippingFee': shippingFee,
+        'discount': discount,
+        'subtotal': subtotal,
+        'total': total,
+        'remaining': total - paid,
+        'paymentStatus': ps.name,
+        'note': note,
+        'deliveryNote': deliveryNote,
+        'plannedDepartAt': plannedDepartAt?.millisecondsSinceEpoch,
+        'timeline': FieldValue.arrayUnion([
+          TimelineEvent(
+            at: DateTime.now(),
+            title: 'Sửa đơn',
+            note: summary,
+            actorId: actorId,
+            actorName: actorName,
+          ).toMap(),
+        ]),
+      });
+
+      tx.set(custRef, {
+        'totalPurchased': FieldValue.increment(total - cur.total),
+        'debt': FieldValue.increment(newOutstanding - oldOutstanding),
+      }, SetOptions(merge: true));
+    });
+
+    await _audit(
+      action: 'edit_order',
+      entityType: 'order',
+      entityId: order.id,
+      actorId: actorId,
+      actorName: actorName,
+      before: {'items': order.items.length, 'total': order.total},
+      after: {
+        'items': items.length,
+        'total': items.fold<int>(0, (s, i) => s + i.lineTotal) +
+            shippingFee -
+            discount,
+      },
+      note: summary,
+    );
+    // Kho có thể đã soạn xong theo danh sách cũ → phải biết đơn vừa đổi.
+    await _notify(
+      title: 'Đơn ${order.code} vừa được sửa',
+      body: summary,
+      refType: NotifRefType.order,
+      refId: order.id,
+      roles: {UserRole.checker, UserRole.warehouse},
+      icon: 'alert',
+    );
   }
 
   Future<void> _appendTimeline(String orderId, TimelineEvent e) async {
@@ -1309,48 +1488,5 @@ class Db {
       batch.update(d.reference, {'read': true});
     }
     await batch.commit();
-  }
-
-  // ---------- Xóa toàn bộ dữ liệu (kể cả hồ sơ người dùng) ----------
-  //
-  // `users` được xoá CUỐI CÙNG để các bước trên vẫn còn quyền ghi. Lưu ý:
-  // chỉ xoá doc Firestore — tài khoản Firebase Auth phải xoá bằng Admin SDK
-  // (noti-server) hoặc tay trong Console. Sau khi xoá, app tự đăng xuất và
-  // số bootstrap 0900000000/123456 lại tạo được Chủ mới (→ màn thiết lập).
-  static const _clearableCollections = [
-    'categories',
-    'products',
-    'customers',
-    'orders',
-    'payments',
-    // legacy — phân hệ chuyến xe/tài xế đã bỏ, vẫn xoá cho sạch dữ liệu cũ
-    'vehicles',
-    'drivers',
-    'trips',
-    'notifications',
-    'price_history',
-    'audit_logs',
-    'counters',
-    'meta', // gồm cờ seeded → cho phép seed lại
-    'users', // PHẢI đứng cuối — xoá trước là mất hồ sơ đang dùng để ghi
-  ];
-
-  Future<void> clearAllData() async {
-    for (final name in _clearableCollections) {
-      await _deleteCollection(name);
-    }
-  }
-
-  Future<void> _deleteCollection(String name) async {
-    while (true) {
-      final snap = await _db.collection(name).limit(400).get();
-      if (snap.docs.isEmpty) break;
-      final batch = _db.batch();
-      for (final d in snap.docs) {
-        batch.delete(d.reference);
-      }
-      await batch.commit();
-      if (snap.docs.length < 400) break;
-    }
   }
 }

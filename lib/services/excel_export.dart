@@ -106,13 +106,13 @@ class ExcelExport {
 
   static void _sheetBestSellers(Excel excel, List<Order> orders) {
     final s = excel['Sản phẩm bán chạy'];
-    _header(s, ['Sản phẩm', 'Số lượng', 'Doanh thu']);
+    _header(s, ['Mặt hàng', 'Số lượng', 'Doanh thu']);
     final agg = <String, (int qty, int total)>{};
     for (final o in orders) {
       if (o.orderStatus == OrderStatus.CANCELLED) continue;
       for (final it in o.items) {
-        final cur = agg[it.displayName] ?? (0, 0);
-        agg[it.displayName] = (cur.$1 + it.quantity, cur.$2 + it.lineTotal);
+        final cur = agg[it.reportLabel] ?? (0, 0);
+        agg[it.reportLabel] = (cur.$1 + it.quantity, cur.$2 + it.lineTotal);
       }
     }
     final rows = agg.entries.toList()

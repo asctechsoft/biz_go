@@ -25,6 +25,9 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
   bool _loading = true;
   bool _saving = false;
 
+  /// Ẩn giá trên phiếu in — xem [ShopInfo.hidePrices].
+  bool _hidePrices = true;
+
   /// SĐT của Chủ mà Db đang dùng làm mặc định — hiện ở gợi ý dưới ô nhập để
   /// người dùng biết bỏ trống thì phiếu in số nào.
   String _ownerPhone = '';
@@ -46,6 +49,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
     setState(() {
       _title.text = shop.title;
       _phone.text = shop.phone;
+      _hidePrices = shop.hidePrices;
       _ownerPhone = owner;
       _loading = false;
     });
@@ -66,9 +70,11 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
     }
     setState(() => _saving = true);
     try {
-      await context
-          .read<Db>()
-          .saveShopInfo(ShopInfo(title: title, phone: _phone.text.trim()));
+      await context.read<Db>().saveShopInfo(ShopInfo(
+            title: title,
+            phone: _phone.text.trim(),
+            hidePrices: _hidePrices,
+          ));
       if (!mounted) return;
       toast(context, 'Đã lưu cài đặt phiếu');
       Navigator.pop(context);
@@ -89,7 +95,13 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(16),
+              // Chừa chỗ cho thanh điều hướng Android — nút "Lưu" nằm cuối trang.
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                16 + MediaQuery.of(context).padding.bottom,
+              ),
               children: [
                 SectionCard(
                   child: Column(
@@ -125,6 +137,42 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
                             ? 'Bỏ trống thì phiếu lấy SĐT của tài khoản Chủ.'
                             : 'Bỏ trống thì phiếu in $_ownerPhone (SĐT tài khoản Chủ).',
                         style: const TextStyle(
+                            fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SectionCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Giá trên phiếu',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w700)),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: _hidePrices,
+                        onChanged: (v) => setState(() => _hidePrices = v),
+                        title: const Text('Ẩn giá trên phiếu in',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text(
+                          _hidePrices
+                              ? 'Phiếu chỉ có mặt hàng + số lượng. Không in đơn '
+                                  'giá, thành tiền, tổng cộng, cần thu.'
+                              : 'Phiếu in đầy đủ đơn giá, thành tiền, tổng '
+                                  'cộng và số cần thu.',
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                      ),
+                      const Divider(height: 20),
+                      const Text(
+                        'Đây chỉ là mặc định. Lúc mở phiếu vẫn bật/tắt được '
+                        'cho riêng lần in đó. Nhân viên không có quyền xem '
+                        'tiền thì luôn in phiếu không giá, không mở lại được.',
+                        style: TextStyle(
                             fontSize: 12, color: AppColors.textSecondary),
                       ),
                     ],

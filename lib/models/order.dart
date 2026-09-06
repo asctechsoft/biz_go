@@ -26,12 +26,15 @@ class OrderItem {
 
   int get lineTotal => quantity * unitPrice;
 
-  String get displayName => '$productName $packagingName';
-
   /// Tên để phân biệt các dòng hàng cùng sản phẩm: chính là **phân loại**
   /// ("Cùi bưởi tươi", "Cùi đẹp"...). Cùng một sản phẩm + quy cách có thể có
   /// nhiều phân loại giá khác nhau, thiếu nó là mấy dòng trông y hệt nhau.
   String get variantLabel => variantName.trim().isEmpty ? productName : variantName;
+
+  /// Khoá gom nhóm cho báo cáo / xuất Excel: **phân loại + quy cách**.
+  /// Gom bằng tên sản phẩm + quy cách thì mọi phân loại của cùng sản phẩm dồn
+  /// chung một dòng — số liệu trộn vào nhau, không biết phân loại nào bán chạy.
+  String get reportLabel => '$variantLabel · $packagingName';
 
   factory OrderItem.fromMap(Map<String, dynamic> m) => OrderItem(
     productId: m['productId'] ?? '',
@@ -124,6 +127,11 @@ class Order {
   final String deliveryCarrierName;
   final String deliveryCarrierPhone;
 
+  /// Ghi chú gắn với **địa chỉ** (`CustomerAddress.note`) — dặn dò cố định như
+  /// "gọi trước khi tới", "vào cổng sau". Snapshot lúc tạo đơn.
+  /// Khác [deliveryNote]: cái kia gõ riêng cho từng đơn.
+  final String deliveryAddressNote;
+
   final List<OrderItem> items;
 
   final int shippingFee;
@@ -177,6 +185,7 @@ class Order {
     this.deliveryMapUrl = '',
     this.deliveryCarrierName = '',
     this.deliveryCarrierPhone = '',
+    this.deliveryAddressNote = '',
     required this.items,
     this.shippingFee = 0,
     this.discount = 0,
@@ -230,6 +239,7 @@ class Order {
     deliveryMapUrl: m['deliveryMapUrl'] ?? '',
     deliveryCarrierName: m['deliveryCarrierName'] ?? '',
     deliveryCarrierPhone: m['deliveryCarrierPhone'] ?? '',
+    deliveryAddressNote: m['deliveryAddressNote'] ?? '',
     deliveryReceiver: m['deliveryReceiver'] ?? '',
     deliveryPhone: m['deliveryPhone'] ?? '',
     items: ((m['items'] as List?) ?? [])
@@ -285,6 +295,7 @@ class Order {
     'deliveryMapUrl': deliveryMapUrl,
     'deliveryCarrierName': deliveryCarrierName,
     'deliveryCarrierPhone': deliveryCarrierPhone,
+    'deliveryAddressNote': deliveryAddressNote,
     'deliveryReceiver': deliveryReceiver,
     'deliveryPhone': deliveryPhone,
     'items': items.map((e) => e.toMap()).toList(),

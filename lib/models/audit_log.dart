@@ -35,7 +35,9 @@ class AuditLog {
   String get actionLabel => switch (action) {
         'create_order' => 'Tạo đơn',
         'record_payment' => 'Thu tiền',
+        'edit_order' => 'Sửa đơn',
         'cancel_order' => 'Hủy đơn',
+        'delete_order' => 'Xoá đơn',
         'warehouse_step' => 'Cập nhật kho',
         'pack_order' => 'Đóng hàng',
         'set_planned_depart' => 'Đặt giờ xuất phát',

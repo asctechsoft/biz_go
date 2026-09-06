@@ -42,7 +42,16 @@ class ProductDetailScreen extends StatelessWidget {
               SliverToBoxAdapter(
                 child: SlidableAutoCloseBehavior(
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    // Chừa chỗ cho thanh điều hướng Android. `Scaffold` chỉ tự
+                    // trừ inset đáy khi có `bottomNavigationBar` — màn này
+                    // không có, nên nút cuối trang bị thanh nav che và cuộn
+                    // hết cỡ vẫn không bấm được.
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      16,
+                      16,
+                      16 + MediaQuery.of(context).padding.bottom,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -62,8 +71,6 @@ class ProductDetailScreen extends StatelessWidget {
                                       id: p.id,
                                       name: p.name,
                                       description: p.description,
-                                      categoryId: p.categoryId,
-                                      categoryName: p.categoryName,
                                       imagePath: path,
                                     ),
                                     p.variants,
@@ -94,8 +101,6 @@ class ProductDetailScreen extends StatelessWidget {
                           ),
                         ],
                         const Divider(height: 28),
-                        KVRow('Danh mục', p.categoryName),
-                        const SizedBox(height: 16),
                         const Text(
                           'Phân loại',
                           style: TextStyle(
@@ -279,11 +284,10 @@ class ProductDetailScreen extends StatelessWidget {
     if (context.mounted) toast(context, 'Đã xóa phân loại');
   }
 
-  /// Sửa tên / mô tả / danh mục của sản phẩm (giữ ảnh + phân loại).
+  /// Sửa tên / mô tả của sản phẩm (giữ ảnh + phân loại).
   Future<void> _editProduct(BuildContext context, Db db, Product p) async {
     final nameC = TextEditingController(text: p.name);
     final descC = TextEditingController(text: p.description);
-    String selectedId = p.categoryId;
 
     await showModalBottomSheet(
       context: context,
@@ -314,55 +318,6 @@ class ProductDetailScreen extends StatelessWidget {
                   decoration: const InputDecoration(labelText: 'Tên sản phẩm'),
                 ),
                 const SizedBox(height: 12),
-                StreamBuilder<List<ProductCategory>>(
-                  stream: db.categories(),
-                  builder: (context, snap) {
-                    final cats = snap.data ?? [];
-                    final sel = cats.where((c) => c.id == selectedId);
-                    final label = sel.isEmpty ? '' : sel.first.name;
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: cats.isEmpty
-                          ? null
-                          : () async {
-                              final picked = await _pickCategory(
-                                ctx,
-                                cats,
-                                selectedId,
-                              );
-                              if (picked != null) {
-                                setSheet(() => selectedId = picked);
-                              }
-                            },
-                      child: InputDecorator(
-                        decoration: InputDecoration(
-                          labelText: cats.isEmpty
-                              ? 'Chưa có danh mục'
-                              : 'Danh mục',
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                label.isEmpty ? 'Chọn...' : label,
-                                style: TextStyle(
-                                  color: label.isEmpty
-                                      ? AppColors.textSecondary
-                                      : AppColors.textPrimary,
-                                ),
-                              ),
-                            ),
-                            const Icon(
-                              Icons.arrow_drop_down,
-                              color: AppColors.textSecondary,
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
                 TextField(
                   controller: descC,
                   decoration: const InputDecoration(labelText: 'Mô tả'),
@@ -370,10 +325,8 @@ class ProductDetailScreen extends StatelessWidget {
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () async {
-                    final cats = await db.categories().first;
-                    final cat = cats.where((c) => c.id == selectedId);
-                    if (nameC.text.trim().isEmpty || cat.isEmpty) {
-                      if (ctx.mounted) toast(ctx, 'Nhập tên và chọn danh mục');
+                    if (nameC.text.trim().isEmpty) {
+                      if (ctx.mounted) toast(ctx, 'Nhập tên sản phẩm');
                       return;
                     }
                     await db.upsertProduct(
@@ -381,8 +334,6 @@ class ProductDetailScreen extends StatelessWidget {
                         id: p.id,
                         name: nameC.text.trim(),
                         description: descC.text.trim(),
-                        categoryId: cat.first.id,
-                        categoryName: cat.first.name,
                         imagePath: p.imagePath,
                         variants: p.variants,
                       ),
@@ -401,51 +352,12 @@ class ProductDetailScreen extends StatelessWidget {
     );
   }
 
-  /// Bottom sheet chọn danh mục → trả về id đã chọn.
-  Future<String?> _pickCategory(
-    BuildContext context,
-    List<ProductCategory> cats,
-    String? current,
-  ) {
-    return showModalBottomSheet<String>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SheetHeader('Chọn danh mục'),
-            for (final c in cats)
-              ListTile(
-                leading: const Icon(
-                  Icons.label_outline,
-                  color: AppColors.primary,
-                ),
-                title: Text(
-                  c.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                trailing: current == c.id
-                    ? const Icon(Icons.check, color: AppColors.primary)
-                    : null,
-                onTap: () => Navigator.pop(ctx, c.id),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 Product _copyVariants(Product p, List<ProductVariant> variants) => Product(
   id: p.id,
   name: p.name,
   description: p.description,
-  categoryId: p.categoryId,
-  categoryName: p.categoryName,
   imagePath: p.imagePath,
   variants: variants,
 );
@@ -473,7 +385,14 @@ class _PackagingScreen extends StatelessWidget {
               SliverAppBar(pinned: true, title: Text(v.name)),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  // Chừa chỗ cho thanh điều hướng Android — xem ghi chú ở màn
+                  // chi tiết sản phẩm.
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    16,
+                    16,
+                    16 + MediaQuery.of(context).padding.bottom,
+                  ),
                   child: Column(
                     children: [
                       OutlinedButton.icon(

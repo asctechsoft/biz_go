@@ -17,6 +17,7 @@ class AuditLogScreen extends StatelessWidget {
         'customer' => 'Khách hàng',
         'product' => 'Sản phẩm',
         'packaging' => 'Quy cách',
+        // legacy — tầng danh mục đã bỏ, nhật ký cũ vẫn cần nhãn
         'category' => 'Danh mục',
         'user' => 'Người dùng',
         // legacy — chuyến xe/xe đã bỏ, nhật ký cũ vẫn cần nhãn để đọc được

@@ -9,6 +9,12 @@ class Perm {
 
   // Chủ độc quyền.
   static bool createOrder(UserRole r) => r == UserRole.owner;
+
+  /// Sửa đơn đã tạo (thêm/bớt hàng, đổi giá, phí). Chỉ Chủ — đụng vào tiền.
+  static bool editOrder(UserRole r) => r == UserRole.owner;
+
+  /// Xoá hẳn đơn tạo nhầm. Chỉ Chủ. Điều kiện đơn còn xoá được: `Db.canDelete`.
+  static bool deleteOrder(UserRole r) => r == UserRole.owner;
   static bool editCatalog(UserRole r) => r == UserRole.owner; // sản phẩm/giá
   static bool manageCustomers(UserRole r) => r == UserRole.owner;
   static bool viewReports(UserRole r) => r == UserRole.owner;

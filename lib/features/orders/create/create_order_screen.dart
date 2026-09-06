@@ -16,8 +16,17 @@ import '../../../widgets/common.dart';
 import '../../customers/customer_edit_screen.dart';
 import '../invoice_screen.dart';
 
+/// Tạo đơn (5 bước) **hoặc sửa đơn** đã tạo.
+///
+/// Truyền [editing] để vào chế độ sửa: bỏ 2 bước chọn khách/địa chỉ (đơn đã
+/// snapshot sẵn), vào thẳng bước Sản phẩm với giỏ hàng đổ từ đơn cũ.
+///
+/// Chế độ sửa KHÔNG cho đổi khách, địa chỉ, tiền trả trước và trạng thái
+/// thanh toán — tiền đã thu là bất biến, đổi những thứ đó là lệch với
+/// `payments` và công nợ đã ghi. Xem [Db.editOrder].
 class CreateOrderScreen extends StatefulWidget {
-  const CreateOrderScreen({super.key});
+  final Order? editing;
+  const CreateOrderScreen({super.key, this.editing});
   @override
   State<CreateOrderScreen> createState() => _CreateOrderScreenState();
 }
@@ -55,17 +64,50 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     'Xác nhận đơn hàng',
   ];
 
+  /// Bước 0-1 không dùng khi sửa đơn nên để trống.
+  static const _editTitles = [
+    '',
+    '',
+    'Sửa đơn - Sản phẩm',
+    'Sửa đơn - Giỏ hàng',
+    'Xác nhận sửa đơn',
+  ];
+
+  Order? get _editing => widget.editing;
+  bool get _isEdit => _editing != null;
+
+  /// Bước đầu tiên hợp lệ: sửa đơn thì bắt đầu ngay ở bước chọn sản phẩm.
+  int get _firstStep => _isEdit ? 2 : 0;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_prefilled) {
-      final extra = GoRouterState.of(context).extra;
-      if (extra is Customer) {
-        _customer = extra;
-        _address = extra.defaultAddress;
-        _step = 2;
+    if (_prefilled) return;
+    _prefilled = true;
+
+    final editing = widget.editing;
+    if (editing != null) {
+      // Đổ lại đúng đơn cũ. `prepaid`/`paymentStatus` đọc lên để phần tổng kết
+      // hiển thị đúng, nhưng KHÔNG cho sửa và không gửi lên `editOrder`.
+      for (final it in editing.items) {
+        _cart[it.packagingId] = it;
       }
-      _prefilled = true;
+      _shipping.text = moneyPlain(editing.shippingFee);
+      _discount.text = moneyPlain(editing.discount);
+      _prepaid.text = moneyPlain(editing.prepaid);
+      _note.text = editing.note;
+      _deliveryNote.text = editing.deliveryNote;
+      _payStatus = editing.paymentStatus;
+      _plannedDepart = editing.plannedDepartAt;
+      _step = _firstStep;
+      return;
+    }
+
+    final extra = GoRouterState.of(context).extra;
+    if (extra is Customer) {
+      _customer = extra;
+      _address = extra.defaultAddress;
+      _step = 2;
     }
   }
 
@@ -87,8 +129,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   int get _codRemaining => _total - _int(_prepaid);
 
   void _back() {
-    if (_step == 0) {
-      context.pop();
+    // Sửa đơn thì bước 2 là bước đầu — lùi thêm nữa là thoát màn.
+    if (_step <= _firstStep) {
+      Navigator.pop(context);
     } else {
       setState(() => _step--);
     }
@@ -106,6 +149,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     setState(() => _busy = true);
     final db = context.read<Db>();
     final user = context.read<AuthProvider>().user!;
+    // Giữ messenger TRƯỚC await: `pushReplacement` gỡ màn này khỏi cây, gọi
+    // `toast(context)` sau đó là dựa vào context đã hỏng nên toast không hiện.
+    final messenger = ScaffoldMessenger.of(context);
     final draft = Order(
       id: '',
       code: '',
@@ -119,6 +165,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       deliveryMapUrl: _address!.mapUrl,
       deliveryCarrierName: _address!.carrierName,
       deliveryCarrierPhone: _address!.carrierPhone,
+      deliveryAddressNote: _address!.note,
       items: _cart.values.toList(),
       shippingFee: _int(_shipping),
       discount: _int(_discount),
@@ -134,6 +181,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       SoundService.cash();
       if (!mounted) return;
       context.pushReplacement('/orders/${order.id}');
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text('Đã tạo đơn ${order.code}')),
+        );
       if (print) {
         Navigator.push(context,
             MaterialPageRoute(builder: (_) => InvoiceScreen(order: order)));
@@ -150,12 +202,48 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     }
   }
 
+  /// Lưu thay đổi cho đơn đang sửa. Không đụng khách/địa chỉ/tiền đã thu —
+  /// xem [Db.editOrder].
+  Future<void> _saveEdit() async {
+    final o = _editing!;
+    setState(() => _busy = true);
+    final db = context.read<Db>();
+    final user = context.read<AuthProvider>().user!;
+    try {
+      await db.editOrder(
+        order: o,
+        items: _cart.values.toList(),
+        shippingFee: _int(_shipping),
+        discount: _int(_discount),
+        note: _note.text.trim(),
+        deliveryNote: _deliveryNote.text.trim(),
+        plannedDepartAt: _plannedDepart,
+        actorId: user.id,
+        actorName: user.name,
+      );
+      if (!mounted) return;
+      // Toast TRƯỚC khi pop: `ScaffoldMessenger` nằm ở tầng app nên snackbar
+      // vẫn sống sau khi màn này bị gỡ, còn gọi sau pop thì context đã hỏng.
+      toast(context, 'Đã lưu thay đổi đơn ${o.code}');
+      Navigator.pop(context);
+    } catch (e) {
+      debugPrint('EDIT-ORDER ERROR: $e');
+      if (mounted) {
+        setState(() => _busy = false);
+        toast(
+            context,
+            friendlyError(e,
+                fallback: 'Không lưu được thay đổi. Thử lại giúp tôi.'));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         leading: BackButton(onPressed: _back),
-        title: Text(_titles[_step]),
+        title: Text(_isEdit ? _editTitles[_step] : _titles[_step]),
       ),
       body: switch (_step) {
         0 => _customerStep(),
@@ -324,29 +412,38 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           return const Center(child: CircularProgressIndicator());
         }
         final products = snap.data!;
-        final categories =
-            products.map((p) => p.categoryName).toSet().toList()..sort();
-        if (categories.isEmpty) {
+        // Nhớ giá bảng của MỌI quy cách đang bán. Khi sửa đơn cũ thì `_listPrice`
+        // rỗng, không có bước này thì giỏ hàng không biết giá gốc để so và nút
+        // "Dùng giá bảng" thành vô dụng. Chỉ ghi vào Map, không setState.
+        for (final p in products) {
+          for (final v in p.variants) {
+            for (final pk in v.packagings) {
+              _listPrice[pk.id] = pk.price;
+            }
+          }
+        }
+        // Mỗi tab là MỘT SẢN PHẨM, bên trong là các phân loại + quy cách của
+        // nó. Trước đây tab là danh mục — mà danh mục đã bỏ, và gom theo sản
+        // phẩm cũng đúng hơn: danh sách bên dưới vốn là phân loại của nó.
+        if (products.isEmpty) {
           return const EmptyState(text: 'Chưa có sản phẩm');
         }
         return DefaultTabController(
-          length: categories.length,
+          length: products.length,
           child: Column(
             children: [
               TabBar(
                 isScrollable: true,
+                tabAlignment: TabAlignment.start,
                 labelColor: AppColors.primary,
                 indicatorColor: AppColors.primary,
                 unselectedLabelColor: AppColors.textSecondary,
-                tabs: [for (final c in categories) Tab(text: c)],
+                tabs: [for (final p in products) Tab(text: p.name)],
               ),
               Expanded(
                 child: TabBarView(
                   children: [
-                    for (final cat in categories)
-                      _productList(products
-                          .where((p) => p.categoryName == cat)
-                          .toList()),
+                    for (final p in products) _productList([p]),
                   ],
                 ),
               ),
@@ -401,22 +498,41 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             // loại và khác giá, để tên sản phẩm ở trên thì mọi dòng giống hệt.
             title: Text(v.name.trim().isEmpty ? p.name : v.name,
                 style: const TextStyle(fontWeight: FontWeight.w700)),
-            subtitle: Row(
+            // Giá sửa tay thì cho "Giá bảng ..." XUỐNG DÒNG RIÊNG, không nhét
+            // chung một dòng — nhét chung là chật rồi cắt cụt thành "(đã s…",
+            // đọc không ra. Mỗi dòng ngắn thì không bao giờ phải cắt.
+            isThreeLine: edited,
+            subtitle: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${pk.name} · ',
-                    style:
-                        const TextStyle(color: AppColors.textSecondary)),
-                Text(money(price),
-                    style: TextStyle(
-                      fontWeight: edited ? FontWeight.w700 : FontWeight.w400,
-                      color: edited
-                          ? AppColors.primary
-                          : AppColors.textSecondary,
-                    )),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(text: '${pk.name} · '),
+                      TextSpan(
+                        text: money(price),
+                        style: TextStyle(
+                          fontWeight:
+                              edited ? FontWeight.w700 : FontWeight.w400,
+                          color: edited
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  style: const TextStyle(color: AppColors.textSecondary),
+                ),
                 if (edited)
-                  const Text('  (đã sửa)',
-                      style: TextStyle(
-                          fontSize: 11, color: AppColors.primary)),
+                  Text(
+                    'Giá bảng ${money(pk.price)}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                      decoration: TextDecoration.lineThrough,
+                    ),
+                  ),
               ],
             ),
             trailing: inCart == null
@@ -424,30 +540,38 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     icon: const Icon(Icons.add),
                     onPressed: () => _addToCart(p, v, pk),
                   )
+                // Nút gọn lại (bỏ padding mặc định 48px của IconButton) để
+                // chừa chỗ cho tên hàng — số lượng 3 chữ số vẫn không đội chỗ.
                 : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
-                          icon: const Icon(Icons.remove_circle_outline),
-                          onPressed: () => _changeQty(pk.id, -1)),
+                      _StepBtn(
+                        icon: Icons.remove_circle_outline,
+                        onTap: () => _changeQty(pk.id, -1),
+                      ),
                       // Chạm vào số để gõ thẳng số lượng.
                       InkWell(
                         onTap: () => _editLine(p, v, pk),
                         borderRadius: BorderRadius.circular(8),
-                        child: Padding(
+                        child: Container(
+                          constraints: const BoxConstraints(minWidth: 34),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
+                              horizontal: 4, vertical: 6),
                           child: Text('${inCart.quantity}',
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 16,
                                   color: AppColors.primary)),
                         ),
                       ),
-                      IconButton(
-                          icon: const Icon(Icons.add_circle,
-                              color: AppColors.primary),
-                          onPressed: () => _changeQty(pk.id, 1)),
+                      _StepBtn(
+                        icon: Icons.add_circle,
+                        color: AppColors.primary,
+                        onTap: () => _changeQty(pk.id, 1),
+                      ),
                     ],
                   ),
           ),
@@ -465,7 +589,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       _lineSheet(
         packagingId: pk.id,
         title: v.name.trim().isEmpty ? p.name : v.name,
-        sub: '${p.name} · ${pk.name}',
         listPrice: pk.price,
         create: () => OrderItem(
           productId: p.id,
@@ -486,7 +609,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   Future<void> _editCartLine(OrderItem it) => _lineSheet(
         packagingId: it.packagingId,
         title: it.variantLabel,
-        sub: '${it.productName} · ${it.packagingName}',
         listPrice: _listPrice[it.packagingId] ?? it.unitPrice,
         create: () => it,
       );
@@ -494,7 +616,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   Future<void> _lineSheet({
     required String packagingId,
     required String title,
-    required String sub,
     required int listPrice,
     required OrderItem Function() create,
   }) async {
@@ -527,10 +648,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SheetHeader(title),
-                Text(sub,
-                    style: const TextStyle(color: AppColors.textSecondary)),
-                const SizedBox(height: 16),
+                // `SheetHeader` tự căn giữa chữ, NHƯNG Column cha dùng
+                // `crossAxisAlignment.start` nên nó co lại đúng bề rộng chữ và
+                // dính lề trái — phải ép giãn hết bề ngang mới căn giữa được.
+                SizedBox(width: double.infinity, child: SheetHeader(title)),
+                const SizedBox(height: 12),
                 const Text('Số lượng',
                     style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
@@ -713,30 +835,42 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         Text(it.variantLabel,
                             style:
                                 const TextStyle(fontWeight: FontWeight.w700)),
-                        Text('${it.productName} · ${it.packagingName}',
-                            style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary)),
                         const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Text(money(it.unitPrice),
+                        // Bỏ tên sản phẩm: mọi dòng đều là "Cùi Bưởi" nên nó
+                        // chỉ tốn chỗ, phân loại ở trên mới là thứ phân biệt.
+                        // Giá bảng vẫn xuống dòng riêng — xem ghi chú ở màn
+                        // chọn sản phẩm: nhét chung một dòng là bị cắt cụt.
+                        Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(text: '${it.packagingName} · '),
+                              TextSpan(
+                                text: money(it.unitPrice),
                                 style: TextStyle(
-                                  fontSize: 12.5,
                                   fontWeight: edited
                                       ? FontWeight.w700
                                       : FontWeight.w400,
                                   color: edited
                                       ? AppColors.primary
                                       : AppColors.textSecondary,
-                                )),
-                            if (edited)
-                              Text('  (giá bảng ${money(listPrice)})',
-                                  style: const TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.textSecondary)),
-                          ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
+                        if (edited)
+                          Text(
+                            'Giá bảng ${money(listPrice)}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textSecondary,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
                         const SizedBox(height: 4),
                         Text(money(it.lineTotal),
                             style: const TextStyle(
@@ -790,9 +924,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               SectionCard(
                 child: Column(
                   children: [
-                    KVRow('Khách hàng', _customer!.name),
-                    KVRow('SĐT', _customer!.phone),
-                    KVRow('Địa chỉ giao', _address!.address),
+                    // Sửa đơn: khách + địa chỉ lấy từ SNAPSHOT của đơn, không
+                    // đọc lại hồ sơ khách (khách đổi địa chỉ sau đó thì đơn cũ
+                    // vẫn phải giữ nơi đã chốt).
+                    KVRow('Khách hàng', _editing?.customerName ?? _customer!.name),
+                    KVRow('SĐT', _editing?.customerPhone ?? _customer!.phone),
+                    KVRow('Địa chỉ giao',
+                        _editing?.deliveryAddress ?? _address!.address),
                     InkWell(
                       onTap: _showCartDetail,
                       child: Padding(
@@ -820,12 +958,16 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               const SizedBox(height: 12),
               _numField('Phí giao hàng', _shipping),
               _numField('Giảm giá', _discount),
-              _numField('Khách trả trước', _prepaid),
-              const SizedBox(height: 4),
-              InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: _pickPayStatus,
-                child: InputDecorator(
+              // Sửa đơn KHÔNG cho đụng tiền đã thu: `prepaid` đã cộng vào
+              // `paidAmount` và công nợ khách lúc tạo đơn, sửa số đó ở đây là
+              // sai lệch sổ sách mà không có payment nào đối chứng.
+              if (!_isEdit) ...[
+                _numField('Khách trả trước', _prepaid),
+                const SizedBox(height: 4),
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _pickPayStatus,
+                  child: InputDecorator(
                   decoration: const InputDecoration(
                       labelText: 'Trạng thái thanh toán'),
                   child: Row(
@@ -834,12 +976,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                           child: Text(paymentStatusUi(_payStatus).label,
                               style: const TextStyle(
                                   fontWeight: FontWeight.w600))),
-                      const Icon(Icons.arrow_drop_down,
-                          color: AppColors.textSecondary),
-                    ],
+                        const Icon(Icons.arrow_drop_down,
+                            color: AppColors.textSecondary),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ],
               const SizedBox(height: 12),
               _departTimeField(),
               const SizedBox(height: 12),
@@ -861,9 +1004,22 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     KVRow('Giảm giá', '- ${money(_int(_discount))}'),
                     const Divider(),
                     KVRow('Tổng cộng', money(_total), bold: true),
-                    KVRow('Khách trả trước', money(_int(_prepaid))),
-                    KVRow('Còn phải thu (COD)', money(_codRemaining),
-                        valueColor: AppColors.danger, bold: true),
+                    // Sửa đơn thì mốc so sánh là số ĐÃ THU thật (gồm cả tiền
+                    // thu sau khi tạo), không phải riêng khoản trả trước.
+                    if (_isEdit) ...[
+                      KVRow('Đã thu', money(_editing!.paidAmount)),
+                      KVRow(
+                          'Còn phải thu',
+                          money(_total - _editing!.paidAmount > 0
+                              ? _total - _editing!.paidAmount
+                              : 0),
+                          valueColor: AppColors.danger,
+                          bold: true),
+                    ] else ...[
+                      KVRow('Khách trả trước', money(_int(_prepaid))),
+                      KVRow('Còn phải thu (COD)', money(_codRemaining),
+                          valueColor: AppColors.danger, bold: true),
+                    ],
                   ],
                 ),
               ),
@@ -876,20 +1032,23 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             child: Column(
               children: [
                 ElevatedButton(
-                  onPressed: _busy ? null : () => _submit(),
+                  onPressed:
+                      _busy ? null : (_isEdit ? _saveEdit : () => _submit()),
                   child: _busy
                       ? const SizedBox(
                           height: 20,
                           width: 20,
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
-                      : const Text('Tạo đơn'),
+                      : Text(_isEdit ? 'Lưu thay đổi' : 'Tạo đơn'),
                 ),
-                const SizedBox(height: 8),
-                OutlinedButton(
-                  onPressed: _busy ? null : () => _submit(print: true),
-                  child: const Text('Tạo đơn & In'),
-                ),
+                if (!_isEdit) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: _busy ? null : () => _submit(print: true),
+                    child: const Text('Tạo đơn & In'),
+                  ),
+                ],
               ],
             ),
           ),
@@ -911,7 +1070,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             final picked = await pickDateTime(
               context,
               initial: _plannedDepart,
-              helpText: 'Ngày xuất phát dự kiến',
+              helpText: 'Giờ xuất phát dự kiến',
             );
             if (picked != null) setState(() => _plannedDepart = picked);
           },
@@ -1049,4 +1208,27 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           onChanged: (_) => setState(() {}),
         ),
       );
+}
+
+/// Nút +/- gọn cho cụm chỉnh số lượng.
+///
+/// `IconButton` mặc định chiếm 48x48 — hai cái là 96px, cộng ô số nữa thì dòng
+/// hàng chỉ còn hơn nửa bề ngang cho tên + giá, đủ để tràn. Cái này ~36px.
+class _StepBtn extends StatelessWidget {
+  final IconData icon;
+  final Color? color;
+  final VoidCallback onTap;
+  const _StepBtn({required this.icon, required this.onTap, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkResponse(
+      onTap: onTap,
+      radius: 22,
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Icon(icon, size: 24, color: color ?? AppColors.textSecondary),
+      ),
+    );
+  }
 }

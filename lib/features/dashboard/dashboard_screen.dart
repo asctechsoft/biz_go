@@ -67,13 +67,13 @@ class DashboardScreen extends StatelessWidget {
             children: [
               // ---- Phần trên cố định (không scroll) ----
               _Header(name: user?.name ?? '', now: now, db: db),
-              // Card đè lên đáy header (-30) nhưng layout chỉ chiếm 98px
-              // (128 - 30) để không tạo khoảng trống bên dưới.
+              // Card đè lên đáy header (-30) nhưng layout chỉ chiếm phần còn
+              // lại (height - 30) để không tạo khoảng trống bên dưới.
               SizedBox(
-                height: 98,
+                height: _StatRow.height - 30,
                 child: OverflowBox(
                   minHeight: 0,
-                  maxHeight: 128,
+                  maxHeight: _StatRow.height,
                   alignment: Alignment.topCenter,
                   child: Transform.translate(
                     offset: const Offset(0, -30),
@@ -274,6 +274,10 @@ class _BellButton extends StatelessWidget {
 
 // ------------------------- Stat cards (4 in a row) -------------------------
 class _StatRow extends StatelessWidget {
+  /// Chiều cao hàng thẻ. Dòng so sánh xuống 2 hàng nên cần cao hơn trước —
+  /// `_Header` bên ngoài phải dùng đúng hằng này, đừng chép số cứng.
+  static const height = 142.0;
+
   final int todayCount, yestCount, revenueToday, revenueYest, delivering, debt;
   const _StatRow({
     required this.todayCount,
@@ -287,7 +291,7 @@ class _StatRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 128,
+      height: _StatRow.height,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -331,19 +335,21 @@ class _StatRow extends StatelessWidget {
   /// người đọc. Số tuyệt đối ("thêm 4 đơn") hiểu được ngay.
   _Trend? _diff(int today, int yest, {required bool money_}) {
     final d = today - yest;
-    if (d == 0) return const _Trend('Bằng hôm qua', 0);
-    final amount = money_ ? money(d.abs()) : '${d.abs()} đơn';
-    return _Trend('$amount so với hôm qua', d);
+    if (d == 0) return const _Trend('', 0);
+    return _Trend(money_ ? money(d.abs()) : '${d.abs()} đơn', d);
   }
 }
 
 /// Dòng so sánh với hôm qua trên thẻ số liệu.
 class _Trend {
-  final String text;
+  /// CHỈ phần số ("3.090.000đ" / "2 đơn"). Chữ "so với hôm qua" nằm ở dòng
+  /// dưới, tách ra để số tiền dài không bị cắt cụt thành "so với h...".
+  /// Rỗng khi [delta] == 0.
+  final String amount;
 
   /// Chênh lệch thô — quyết định mũi tên lên/xuống và màu. 0 = bằng hôm qua.
   final int delta;
-  const _Trend(this.text, this.delta);
+  const _Trend(this.amount, this.delta);
 
   Color get color => switch (delta) {
         > 0 => AppColors.success,
@@ -416,29 +422,59 @@ class _StatCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 3),
+          // Thẻ chỉ rộng 140 nên "3.090.000đ so với hôm qua" không thể vừa một
+          // dòng. Tách số lên trên, chữ "so với hôm qua" xuống dưới — đọc đủ
+          // chữ mà thẻ không phải nới ngang.
           if (trend != null)
-            Row(
-              children: [
-                if (trend!.delta != 0) ...[
-                  Icon(
-                    trend!.delta > 0
-                        ? Icons.arrow_upward
-                        : Icons.arrow_downward,
-                    size: 12,
-                    color: trend!.color,
+            if (trend!.delta == 0)
+              Text(
+                'Bằng hôm qua',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10, color: trend!.color),
+              )
+            else
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        trend!.delta > 0
+                            ? Icons.arrow_upward
+                            : Icons.arrow_downward,
+                        size: 12,
+                        color: trend!.color,
+                      ),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            trend!.amount,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: trend!.color,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 2),
-                ],
-                Expanded(
-                  child: Text(
-                    trend!.text,
+                  const Text(
+                    'so với hôm qua',
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10, color: trend!.color),
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
         ],
       ),
     );
@@ -955,11 +991,26 @@ class _TodoCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '$count',
+                // Cả 3 thẻ đều đếm ĐƠN, nên ghi rõ đơn vị: "Công nợ cần thu"
+                // mà chỉ có số 2 thì dễ đọc nhầm thành 2 đồng hay 2 khách.
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(text: '$count'),
+                      const TextSpan(
+                        text: ' đơn',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
+                    color: AppColors.textPrimary,
                   ),
                 ),
                 Container(

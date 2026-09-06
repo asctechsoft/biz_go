@@ -1,16 +1,11 @@
 import 'package:uuid/uuid.dart';
 
-/// Danh mục → Sản phẩm → Phân loại (variant) → Quy cách/Bao bì (packaging) → Giá.
-
-class ProductCategory {
-  final String id;
-  final String name;
-  ProductCategory({required this.id, required this.name});
-
-  factory ProductCategory.fromMap(String id, Map<String, dynamic> m) =>
-      ProductCategory(id: id, name: m['name'] ?? '');
-  Map<String, dynamic> toMap() => {'name': name};
-}
+/// Sản phẩm → Phân loại (variant) → Quy cách/Bao bì (packaging) → Giá.
+///
+/// KHÔNG còn tầng **danh mục**: quy mô một cửa hàng vài chục sản phẩm thì thêm
+/// một tầng gom nhóm chỉ tốn thao tác lúc nhập, không giúp tìm nhanh hơn.
+/// Doc cũ trong `products` còn `categoryId`/`categoryName` thì cứ để, code
+/// không đọc tới nữa.
 
 class Packaging {
   final String id;
@@ -115,8 +110,6 @@ class Product {
   final String id;
   final String name;
   final String description;
-  final String categoryId;
-  final String categoryName;
   final String? imagePath; // local compressed image path
   final List<ProductVariant> variants;
 
@@ -124,8 +117,6 @@ class Product {
     required this.id,
     required this.name,
     this.description = '',
-    required this.categoryId,
-    this.categoryName = '',
     this.imagePath,
     this.variants = const [],
   });
@@ -136,8 +127,6 @@ class Product {
         id: id,
         name: m['name'] ?? '',
         description: m['description'] ?? '',
-        categoryId: m['categoryId'] ?? '',
-        categoryName: m['categoryName'] ?? '',
         imagePath: m['imagePath'],
         variants: ((m['variants'] as List?) ?? [])
             .map((e) => ProductVariant.fromMap(Map<String, dynamic>.from(e)))
@@ -147,8 +136,6 @@ class Product {
   Map<String, dynamic> toMap() => {
         'name': name,
         'description': description,
-        'categoryId': categoryId,
-        'categoryName': categoryName,
         'imagePath': imagePath,
         'variants': variants.map((e) => e.toMap()).toList(),
         'nameLower': name.toLowerCase(),

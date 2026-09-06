@@ -35,19 +35,32 @@ Future<void> downloadInvoicePdf(BuildContext context, Order order, ShopInfo shop
 }
 
 /// Phiếu giao hàng (§8): mẫu hóa đơn xem trước + in. Bluetooth in sau.
-class InvoiceScreen extends StatelessWidget {
+///
+/// Có in giá hay không quyết định bởi 2 tầng:
+/// 1. [canSeeMoney] — quyền của người đang xem (`Perm.viewMoney`). False thì
+///    khoá cứng, không nút nào mở lại được.
+/// 2. `ShopInfo.hidePrices` — mặc định của cửa hàng, đặt ở Cài đặt phiếu.
+///    Chủ lật được cho RIÊNG lần in này bằng nút trên thanh tiêu đề.
+class InvoiceScreen extends StatefulWidget {
   final Order order;
   final int copies;
 
-  /// false → ẩn đơn giá, thành tiền, tổng cộng, cần thu. Người không phải Chủ
-  /// in ra bản này: đủ để soạn và giao hàng, không lộ giá bán.
-  final bool showMoney;
+  /// Vai trò có được xem tiền không. False → phiếu luôn không giá.
+  final bool canSeeMoney;
   const InvoiceScreen({
     super.key,
     required this.order,
     this.copies = 1,
-    this.showMoney = true,
+    this.canSeeMoney = true,
   });
+
+  @override
+  State<InvoiceScreen> createState() => _InvoiceScreenState();
+}
+
+class _InvoiceScreenState extends State<InvoiceScreen> {
+  /// Lật tay cho riêng lần in này. `null` = theo mặc định trong Cài đặt phiếu.
+  bool? _override;
 
   @override
   Widget build(BuildContext context) {
@@ -64,16 +77,32 @@ class InvoiceScreen extends StatelessWidget {
   }
 
   Widget _paper(BuildContext context, ShopInfo shop) {
-    final o = order;
+    final o = widget.order;
+    final copies = widget.copies;
+    // Không có quyền xem tiền thì mọi thứ bên dưới vô nghĩa — luôn false.
+    final showMoney =
+        widget.canSeeMoney && (_override ?? !shop.hidePrices);
     return Scaffold(
       backgroundColor: const Color(0xFFECECEC),
       appBar: AppBar(
         title: const Text('Phiếu giao hàng'),
         actions: [
+          // Lật giá cho riêng lần in này. Chỉ hiện với người được xem tiền.
+          if (widget.canSeeMoney)
+            IconButton(
+              icon: Icon(showMoney
+                  ? Icons.attach_money
+                  : Icons.money_off_csred_outlined),
+              tooltip: showMoney ? 'Đang in kèm giá' : 'Đang in không giá',
+              onPressed: () => setState(() => _override = !showMoney),
+            ),
           IconButton(
             icon: const Icon(Icons.download_outlined),
             tooltip: 'Tải PDF',
-            onPressed: () => downloadInvoicePdf(context, o, shop),
+            // PHẢI truyền showMoney: xem bản ẩn tiền rồi bấm tải mà quên cờ
+            // này thì PDF ra bản đầy đủ giá — lộ đúng thứ vừa che.
+            onPressed: () =>
+                downloadInvoicePdf(context, o, shop, showMoney: showMoney),
           ),
           IconButton(
             icon: const Icon(Icons.print),
@@ -86,7 +115,13 @@ class InvoiceScreen extends StatelessWidget {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        // Chừa chỗ cho thanh điều hướng Android — nút "Tải PDF" nằm cuối trang.
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + MediaQuery.of(context).padding.bottom,
+        ),
         children: [
           // Tờ phiếu — nền trắng, khổ giấy in.
           Container(
@@ -195,6 +230,9 @@ class InvoiceScreen extends StatelessWidget {
                   if (o.deliveryCarrierPhone.isNotEmpty)
                     _line('SĐT nhà xe:', o.deliveryCarrierPhone),
                 ],
+                // Dặn dò cố định của địa chỉ ("gọi trước khi tới"...).
+                if (o.deliveryAddressNote.isNotEmpty)
+                  _line('Lưu ý địa chỉ:', o.deliveryAddressNote),
                 const SizedBox(height: 8),
                 _dashed(),
                 // Bảng sản phẩm — bỏ `const` vì cột "Thành tiền" có điều kiện.
@@ -247,14 +285,21 @@ class InvoiceScreen extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // Phân loại làm tên mặt hàng, KHÔNG phải tên sản
+                              // phẩm: mọi dòng đều là "Cùi Bưởi 1kg" thì phiếu
+                              // in ra không phân biệt nổi dòng nào là dòng nào.
+                              // Giống hệt màn chi tiết đơn.
                               Text(
-                                it.displayName,
-                                style: const TextStyle(fontSize: 13),
+                                it.variantLabel,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                               Text(
                                 showMoney
-                                    ? '  ${money(it.unitPrice)}/${it.packagingName}'
-                                    : '  ${it.packagingName}',
+                                    ? '${it.packagingName} · ${money(it.unitPrice)}'
+                                    : it.packagingName,
                                 style: const TextStyle(
                                   fontSize: 11,
                                   color: AppColors.textSecondary,
@@ -375,7 +420,8 @@ class InvoiceScreen extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
-            onPressed: () => downloadInvoicePdf(context, o, shop),
+            onPressed: () =>
+                downloadInvoicePdf(context, o, shop, showMoney: showMoney),
             icon: const Icon(Icons.download_outlined),
             label: const Text('Tải PDF'),
           ),

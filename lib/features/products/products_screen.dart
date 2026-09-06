@@ -22,19 +22,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   Widget build(BuildContext context) {
     final db = context.read<Db>();
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sản phẩm'),
-        actions: [
-          TextButton.icon(
-            onPressed: () => _manageCategories(context, db),
-            icon: const Icon(Icons.category, color: Colors.white, size: 20),
-            label: const Text(
-              'Danh mục',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Sản phẩm')),
       body: Column(
         children: [
           Padding(
@@ -140,7 +128,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
   Future<void> _addProduct(BuildContext context, Db db) async {
     final nameC = TextEditingController();
     final descC = TextEditingController();
-    String? selectedId;
     String? imagePath;
     final imgSvc = context.read<ImageService>();
 
@@ -193,81 +180,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   decoration: const InputDecoration(labelText: 'Tên sản phẩm'),
                 ),
                 const SizedBox(height: 12),
-                // Danh mục — cập nhật trực tiếp khi thêm mới.
-                StreamBuilder<List<ProductCategory>>(
-                  stream: db.categories(),
-                  builder: (context, snap) {
-                    final cats = snap.data ?? [];
-                    if (cats.isNotEmpty &&
-                        !cats.any((c) => c.id == selectedId)) {
-                      selectedId = cats.first.id;
-                    }
-                    return Row(
-                      children: [
-                        Expanded(
-                          child: Builder(
-                            builder: (_) {
-                              final sel = cats.where((c) => c.id == selectedId);
-                              final label = sel.isEmpty ? '' : sel.first.name;
-                              return InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: cats.isEmpty
-                                    ? null
-                                    : () async {
-                                        final picked = await _pickCategory(
-                                          ctx,
-                                          cats,
-                                          selectedId,
-                                        );
-                                        if (picked != null) {
-                                          setSheet(() => selectedId = picked);
-                                        }
-                                      },
-                                child: InputDecorator(
-                                  decoration: InputDecoration(
-                                    labelText: cats.isEmpty
-                                        ? 'Chưa có danh mục — bấm +'
-                                        : 'Danh mục',
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          label.isEmpty ? 'Chọn...' : label,
-                                          style: TextStyle(
-                                            color: label.isEmpty
-                                                ? AppColors.textSecondary
-                                                : AppColors.textPrimary,
-                                          ),
-                                        ),
-                                      ),
-                                      const Icon(
-                                        Icons.arrow_drop_down,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.add_circle,
-                            color: AppColors.primary,
-                          ),
-                          tooltip: 'Thêm danh mục',
-                          onPressed: () async {
-                            final id = await _addCategoryDialog(ctx, db);
-                            if (id != null) setSheet(() => selectedId = id);
-                          },
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
                 TextField(
                   controller: descC,
                   decoration: const InputDecoration(labelText: 'Mô tả'),
@@ -275,20 +187,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () async {
-                    final cats = await db.categories().first;
-                    final cat = cats.where((c) => c.id == selectedId);
-                    if (nameC.text.trim().isEmpty || cat.isEmpty) {
-                      if (ctx.mounted) {
-                        toast(ctx, 'Nhập tên và chọn danh mục');
-                      }
+                    if (nameC.text.trim().isEmpty) {
+                      if (ctx.mounted) toast(ctx, 'Nhập tên sản phẩm');
                       return;
                     }
                     final p = Product(
                       id: '',
                       name: nameC.text.trim(),
                       description: descC.text.trim(),
-                      categoryId: cat.first.id,
-                      categoryName: cat.first.name,
                       imagePath: imagePath,
                     );
                     final id = await db.upsertProduct(p);
@@ -334,221 +240,4 @@ class _ProductsScreenState extends State<ProductsScreen> {
     }
   }
 
-  /// Bottom sheet chọn danh mục → trả về id đã chọn.
-  Future<String?> _pickCategory(
-    BuildContext context,
-    List<ProductCategory> cats,
-    String? current,
-  ) {
-    return showModalBottomSheet<String>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SheetHeader('Chọn danh mục'),
-            for (final c in cats)
-              ListTile(
-                leading: const Icon(
-                  Icons.label_outline,
-                  color: AppColors.primary,
-                ),
-                title: Text(
-                  c.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                trailing: current == c.id
-                    ? const Icon(Icons.check, color: AppColors.primary)
-                    : null,
-                onTap: () => Navigator.pop(ctx, c.id),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Dialog nhập tên danh mục mới → trả về id vừa tạo.
-  Future<String?> _addCategoryDialog(BuildContext context, Db db) async {
-    final c = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        insetPadding: const EdgeInsets.all(16),
-        title: const Text('Thêm danh mục'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: TextField(
-            controller: c,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Tên danh mục'),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(minimumSize: const Size(80, 40)),
-            onPressed: () => Navigator.pop(ctx, c.text.trim()),
-            child: const Text('Thêm'),
-          ),
-        ],
-      ),
-    );
-    if (name == null || name.isEmpty) return null;
-    final id = await db.upsertCategory(ProductCategory(id: '', name: name));
-    if (context.mounted) toast(context, 'Đã thêm danh mục');
-    return id;
-  }
-
-  /// Dialog sửa tên danh mục (giữ id).
-  Future<void> _editCategoryDialog(
-    BuildContext context,
-    Db db,
-    ProductCategory cat,
-  ) async {
-    final c = TextEditingController(text: cat.name);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        insetPadding: const EdgeInsets.all(16),
-        title: const Text('Sửa danh mục'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: TextField(
-            controller: c,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Tên danh mục'),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(minimumSize: const Size(80, 40)),
-            onPressed: () => Navigator.pop(ctx, c.text.trim()),
-            child: const Text('Lưu'),
-          ),
-        ],
-      ),
-    );
-    if (name == null || name.isEmpty || name == cat.name) return;
-    await db.upsertCategory(ProductCategory(id: cat.id, name: name));
-    if (context.mounted) toast(context, 'Đã cập nhật danh mục');
-  }
-
-  /// Quản lý danh mục: xem / thêm / xóa.
-  Future<void> _manageCategories(BuildContext context, Db db) async {
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom:
-              MediaQuery.of(ctx).viewInsets.bottom +
-              MediaQuery.of(ctx).padding.bottom +
-              16,
-          left: 16,
-          right: 16,
-          top: 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Danh mục',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                TextButton.icon(
-                  onPressed: () => _addCategoryDialog(ctx, db),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Thêm'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 400),
-              child: StreamBuilder<List<ProductCategory>>(
-                stream: db.categories(),
-                builder: (context, snap) {
-                  final cats = snap.data ?? [];
-                  if (cats.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'Chưa có danh mục',
-                        style: TextStyle(color: AppColors.textSecondary),
-                      ),
-                    );
-                  }
-                  return ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final c in cats)
-                        ListTile(
-                          leading: const Icon(
-                            Icons.label_outline,
-                            color: AppColors.primary,
-                          ),
-                          title: Text(c.name),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.edit_outlined,
-                                  color: AppColors.primary,
-                                ),
-                                tooltip: 'Sửa tên',
-                                onPressed: () =>
-                                    _editCategoryDialog(ctx, db, c),
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  color: AppColors.danger,
-                                ),
-                                onPressed: () async {
-                                  final ok = await confirmDialog(
-                                    ctx,
-                                    title: 'Xóa danh mục',
-                                    message:
-                                        'Xóa "${c.name}"? Sản phẩm cũ không bị ảnh hưởng.',
-                                    confirm: 'Xóa',
-                                  );
-                                  if (ok) {
-                                    await db.deleteCategory(c.id);
-                                    if (ctx.mounted) {
-                                      toast(ctx, 'Đã xóa danh mục');
-                                    }
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
 }

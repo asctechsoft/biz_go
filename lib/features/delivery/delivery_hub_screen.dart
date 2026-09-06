@@ -405,22 +405,34 @@ class _OrderCard extends StatelessWidget {
               const SizedBox(height: 6),
               Row(
                 children: [
+                  // Bọc Flexible + ellipsis: đơn vài chục triệu là hai cụm số
+                  // này đủ dài để tràn ngang trên máy màn nhỏ.
                   if (showMoney) ...[
-                    Text(money(o.total),
-                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                    Flexible(
+                      child: Text(money(o.total),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              const TextStyle(fontWeight: FontWeight.w700)),
+                    ),
                     const SizedBox(width: 10),
-                    if (o.remaining > 0)
-                      Text('Cần thu ${money(o.remaining)}',
-                          style: const TextStyle(
-                              fontSize: 12.5,
-                              color: AppColors.danger,
-                              fontWeight: FontWeight.w600))
-                    else
-                      const Text('Đã thanh toán đủ',
-                          style: TextStyle(
-                              fontSize: 12.5,
-                              color: AppColors.success,
-                              fontWeight: FontWeight.w600)),
+                    Flexible(
+                      child: o.remaining > 0
+                          ? Text('Cần thu ${money(o.remaining)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 12.5,
+                                  color: AppColors.danger,
+                                  fontWeight: FontWeight.w600))
+                          : const Text('Đã thanh toán đủ',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: AppColors.success,
+                                  fontWeight: FontWeight.w600)),
+                    ),
                   ] else
                     Text('${o.items.length} mặt hàng',
                         style: const TextStyle(

@@ -140,7 +140,7 @@ lib/
 │   ├── dashboard/   tổng quan (donut + line chart + việc cần làm)
 │   ├── orders/      danh sách, tạo đơn, chi tiết, hoá đơn, thu tiền
 │   ├── customers/   khách, địa chỉ, công nợ
-│   ├── products/    sản phẩm, phân loại, quy cách/giá, lịch sử giá
+│   ├── products/    sản phẩm, phân loại, quy cách/giá, lịch sử giá (không có danh mục)
 │   ├── warehouse/   kho & đóng hàng (tab "Chờ xuất phát" có nút cho đơn đi)
 │   ├── delivery/    giao hàng: chờ xuất phát / đang giao / xong hôm nay
 │   │                + delivery_actions.dart (thao tác dùng chung)
@@ -162,6 +162,8 @@ noti-server/         worker Node.js gửi push FCM theo vai trò
 
 ## 10. MVP đã có
 
-Đăng nhập/phân quyền · sản phẩm/giá/lịch sử giá · khách/nhiều địa chỉ/công nợ · tạo đơn (snapshot giá + địa chỉ) · in hoá đơn (preview + PDF) · kho/đóng hàng (mã kiện tự sinh) · xuất phát từng đơn hoặc cả lô · đối soát cuối ngày/thu COD · thu công nợ (FIFO nhiều đơn) · hủy đơn (hoàn tiền, đối trừ) · timeline · notification theo vai trò + push · dashboard/báo cáo · audit log · quản lý người dùng · xóa toàn bộ dữ liệu.
+Đăng nhập/phân quyền · sản phẩm/giá/lịch sử giá · khách/nhiều địa chỉ/công nợ · tạo đơn (snapshot giá + địa chỉ) · in hoá đơn (preview + PDF) · kho/đóng hàng (mã kiện tự sinh) · xuất phát từng đơn hoặc cả lô · đối soát cuối ngày/thu COD · thu công nợ (FIFO nhiều đơn) · hủy đơn (hoàn tiền, đối trừ) · timeline · notification theo vai trò + push · dashboard/báo cáo · audit log · quản lý người dùng.
+
+> Dọn dữ liệu để bàn giao: `cd noti-server && npm run wipe-orders` (xoá đơn + phiếu thu + reset công nợ, **giữ** sản phẩm/khách/tài khoản). App không còn nút "Xoá toàn bộ dữ liệu" — nút đó chỉ để test lúc dev.
 
 **Chưa làm:** in Bluetooth thật (mới preview hoá đơn), deep-link khi bấm push, iOS APNs.

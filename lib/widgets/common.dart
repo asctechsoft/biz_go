@@ -178,36 +178,410 @@ Future<bool> confirmDialog(BuildContext context,
   return r ?? false;
 }
 
-/// Chọn **ngày + giờ** trong một lượt (date picker rồi time picker).
+/// Chọn **ngày + giờ** trong MỘT bottom sheet.
 ///
-/// Trả `null` nếu người dùng huỷ ở bất kỳ bước nào — huỷ giữa chừng KHÔNG
-/// được coi là đã chọn, kẻo bấm nhầm là ghi đè mất giờ cũ.
+/// Không dùng `showDatePicker` + `showTimePicker` mặc định: hai hộp thoại nối
+/// nhau, mặt đồng hồ kim khó bấm đúng phút, và chọn "8h sáng mai" phải qua 6
+/// thao tác. Ở đây ngày là dải chip 14 ngày tới, giờ là 2 bánh xe lăn — việc
+/// hay gặp nhất chỉ tốn 2 chạm.
 ///
-/// Tiếng Việt + khung 24h do `MaterialApp` khoá sẵn (`locale: vi` +
-/// `alwaysUse24HourFormat`), ở đây không cần cấu hình lại.
+/// Phút bước **5** (0, 5, 10...) vì giờ xuất phát không ai hẹn lẻ từng phút;
+/// giá trị cũ lẻ sẽ được làm tròn về mốc 5 phút gần nhất.
+///
+/// Trả `null` khi người dùng đóng sheet mà không xác nhận.
 Future<DateTime?> pickDateTime(
   BuildContext context, {
   DateTime? initial,
-  String helpText = 'Chọn ngày',
+  String helpText = 'Chọn thời gian',
 }) async {
   final now = DateTime.now();
-  final base = initial ?? now;
-  final day = await showDatePicker(
-    context: context,
-    initialDate: base,
-    // Cho lùi 1 ngày phòng khi nhập bù đơn hôm qua; xa hơn thì vô nghĩa.
-    firstDate: DateTime(now.year, now.month, now.day - 1),
-    lastDate: DateTime(now.year + 1, now.month, now.day),
-    helpText: helpText,
+  final base = initial ?? now.add(const Duration(hours: 1));
+
+  // 14 ngày kể từ hôm nay — đủ cho lịch giao hàng, khỏi cần hộp thoại lịch.
+  final today = DateTime(now.year, now.month, now.day);
+  final days = List.generate(14, (i) => today.add(Duration(days: i)));
+
+  var day = DateTime(base.year, base.month, base.day);
+  // Ngày cũ đã qua thì kéo về hôm nay; ngày xa trong tương lai GIỮ NGUYÊN —
+  // đặt lịch cho tháng sau là chuyện có thật.
+  if (day.isBefore(today)) day = today;
+
+  // Mở sẵn lịch tháng khi ngày đang chọn nằm ngoài dải chip 14 ngày.
+  var showCalendar = day.isAfter(days.last);
+  // Nới trần nếu đơn cũ có giờ đặt xa hơn 1 năm — `CalendarDatePicker` assert
+  // khi `initialDate` vượt `lastDate`.
+  final yearAhead = today.add(const Duration(days: 365));
+  final lastPickable = day.isAfter(yearAhead) ? day : yearAhead;
+
+  var hour = base.hour;
+  var minuteIndex = (base.minute / 5).round().clamp(0, 11);
+
+  final hourCtrl = FixedExtentScrollController(initialItem: hour);
+  final minCtrl = FixedExtentScrollController(initialItem: minuteIndex);
+  final dayCtrl = ScrollController();
+  var didInitialScroll = false;
+
+  /// Kéo dải chip tới ngày đang chọn. Chọn 25/09 từ lịch mà dải vẫn đứng ở
+  /// "Hôm nay" thì nhìn như chưa chọn gì.
+  void scrollToDay() {
+    if (!dayCtrl.hasClients) return;
+    final list = days.contains(day) ? days : [...days, day];
+    final i = list.indexOf(day);
+    if (i < 0) return;
+    const extent = 70.0; // 62 bề ngang chip + 8 khoảng cách
+    final target =
+        (i * extent - 24).clamp(0.0, dayCtrl.position.maxScrollExtent);
+    dayCtrl.animateTo(
+      target,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
+    );
+  }
+
+  try {
+    return await showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final picked = DateTime(
+            day.year,
+            day.month,
+            day.day,
+            hour,
+            minuteIndex * 5,
+          );
+          // Ngày đang chọn nằm ngoài 14 ngày đầu thì chèn thêm chip cho nó,
+          // không thì chuyển sang chế độ chip là mất dấu ngày vừa chọn.
+          final chips = days.contains(day) ? days : [...days, day];
+          // Mở sheet mà ngày đang chọn nằm giữa dải thì cũng phải kéo tới.
+          if (!didInitialScroll) {
+            didInitialScroll = true;
+            WidgetsBinding.instance
+                .addPostFrameCallback((_) => scrollToDay());
+          }
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              // Cuộn được: máy màn ngắn thì cụm ngày + chip + bánh xe cao hơn
+              // chiều cao sheet cho phép.
+              child: SingleChildScrollView(
+                child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SheetHeader(helpText),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 8, 4),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Ngày',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const Spacer(),
+                        // Dải chip chỉ phủ 2 tuần; đặt lịch tháng sau thì mở
+                        // lịch tháng ra chọn.
+                        TextButton.icon(
+                          onPressed: () =>
+                              setSheet(() => showCalendar = !showCalendar),
+                          icon: Icon(
+                            showCalendar
+                                ? Icons.view_week_outlined
+                                : Icons.calendar_month_outlined,
+                            size: 18,
+                          ),
+                          label: Text(
+                            showCalendar ? 'Chọn nhanh' : 'Ngày khác',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (showCalendar)
+                    SizedBox(
+                      height: 320,
+                      child: CalendarDatePicker(
+                        initialDate: day,
+                        firstDate: today,
+                        lastDate: lastPickable,
+                        onDateChanged: (d) => setSheet(() {
+                          day = DateTime(d.year, d.month, d.day);
+                          // Chọn xong thì thu lịch lại để thấy ngay phần giờ.
+                          showCalendar = false;
+                          // Dải chip vừa dựng lại ở khung sau — phải đợi nó
+                          // gắn vào controller rồi mới cuộn được.
+                          WidgetsBinding.instance
+                              .addPostFrameCallback((_) => scrollToDay());
+                        }),
+                      ),
+                    )
+                  else
+                    SizedBox(
+                    height: 62,
+                    child: ListView.separated(
+                      controller: dayCtrl,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: chips.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 8),
+                      itemBuilder: (ctx, i) {
+                        final d = chips[i];
+                        final on = d == day;
+                        return InkWell(
+                          onTap: () => setSheet(() => day = d),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            width: 62,
+                            decoration: BoxDecoration(
+                              color: on ? AppColors.primary : AppColors.bg,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: on ? AppColors.primary : AppColors.border,
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  _dayTag(d, today),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: on
+                                        ? Colors.white70
+                                        : AppColors.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${d.day}/${d.month}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: on
+                                        ? Colors.white
+                                        : AppColors.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const _PickerLabel('Giờ hay dùng'),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        // 3 khung giờ chốt theo lịch chạy hàng thực tế.
+                        for (final h in const [10, 13, 17])
+                          ChoiceChip(
+                            label: Text('$h:00'.padLeft(5, '0')),
+                            selected: hour == h && minuteIndex == 0,
+                            onSelected: (_) => setSheet(() {
+                              hour = h;
+                              minuteIndex = 0;
+                              hourCtrl.jumpToItem(h);
+                              minCtrl.jumpToItem(0);
+                            }),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Hai bánh xe lăn: chọn giờ/phút bằng vuốt, không phải nhắm
+                  // vào kim đồng hồ.
+                  SizedBox(
+                    height: 150,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          height: 46,
+                          margin: const EdgeInsets.symmetric(horizontal: 60),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryLight,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _wheel(
+                              controller: hourCtrl,
+                              count: 24,
+                              selected: hour,
+                              label: (i) => i.toString().padLeft(2, '0'),
+                              onChanged: (i) => setSheet(() => hour = i),
+                            ),
+                            const Text(
+                              ':',
+                              style: TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            _wheel(
+                              controller: minCtrl,
+                              count: 12,
+                              selected: minuteIndex,
+                              label: (i) => (i * 5).toString().padLeft(2, '0'),
+                              onChanged: (i) =>
+                                  setSheet(() => minuteIndex = i),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Nhắc lại nguyên câu để khỏi chọn nhầm ngày mà không biết.
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.bg,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        _fullLabel(picked, today),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Huỷ'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () => Navigator.pop(ctx, picked),
+                            child: const Text('Xong'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  } finally {
+    hourCtrl.dispose();
+    minCtrl.dispose();
+    dayCtrl.dispose();
+  }
+}
+
+/// Một bánh xe số cho giờ hoặc phút.
+Widget _wheel({
+  required FixedExtentScrollController controller,
+  required int count,
+  required int selected,
+  required String Function(int) label,
+  required ValueChanged<int> onChanged,
+}) {
+  return SizedBox(
+    width: 76,
+    height: 150,
+    child: ListWheelScrollView.useDelegate(
+      controller: controller,
+      itemExtent: 46,
+      diameterRatio: 1.5,
+      perspective: 0.003,
+      physics: const FixedExtentScrollPhysics(),
+      onSelectedItemChanged: onChanged,
+      childDelegate: ListWheelChildBuilderDelegate(
+        childCount: count,
+        builder: (ctx, i) => Center(
+          child: Text(
+            label(i),
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: i == selected ? FontWeight.w800 : FontWeight.w500,
+              color:
+                  i == selected ? AppColors.primary : AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    ),
   );
-  if (day == null || !context.mounted) return null;
-  final time = await showTimePicker(
-    context: context,
-    initialTime: TimeOfDay.fromDateTime(base),
-    helpText: 'Chọn giờ',
-  );
-  if (time == null) return null;
-  return DateTime(day.year, day.month, day.day, time.hour, time.minute);
+}
+
+/// Nhãn nhỏ phía trên từng nhóm trong sheet chọn thời gian.
+class _PickerLabel extends StatelessWidget {
+  final String text;
+  const _PickerLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      );
+}
+
+const _weekdays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+
+/// Nhãn ngắn trên chip ngày: "Hôm nay" / "Mai" / thứ trong tuần.
+String _dayTag(DateTime d, DateTime today) {
+  final diff = d.difference(today).inDays;
+  if (diff == 0) return 'Hôm nay';
+  if (diff == 1) return 'Mai';
+  return _weekdays[d.weekday - 1];
+}
+
+/// Câu xác nhận đầy đủ: "Mai (T2) · 08:30".
+String _fullLabel(DateTime d, DateTime today) {
+  final tag = _dayTag(d, today);
+  final wd = _weekdays[d.weekday - 1];
+  final hm = '${d.hour.toString().padLeft(2, '0')}:'
+      '${d.minute.toString().padLeft(2, '0')}';
+  final date = '${d.day.toString().padLeft(2, '0')}/'
+      '${d.month.toString().padLeft(2, '0')}';
+  return tag == wd ? '$wd $date · $hm' : '$tag ($wd $date) · $hm';
 }
 
 void toast(BuildContext context, String msg) {

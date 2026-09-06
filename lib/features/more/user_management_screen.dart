@@ -166,6 +166,13 @@ class UserManagementScreen extends StatelessWidget {
     }
   }
 
+  /// SĐT trong ô nhập có khác SĐT đang lưu không (bỏ qua ký tự không phải số).
+  static bool _phoneChanged(AppUser u, String input) {
+    String digits(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
+    final v = digits(input);
+    return v.isNotEmpty && v != digits(u.phone);
+  }
+
   /// Bật/tắt tài khoản. `Db` từ chối khi khoá Chủ đang hoạt động cuối cùng.
   Future<void> _setActive(
       BuildContext context, Db db, AppUser u, bool active) async {
@@ -187,8 +194,15 @@ class UserManagementScreen extends StatelessWidget {
     final db = context.read<Db>();
     final auth = context.read<AuthProvider>();
     final nameC = TextEditingController(text: u.name);
+    final phoneC = TextEditingController(text: u.phone);
+    final passC = TextEditingController();
     UserRole role = u.role;
     final lockRole = u.role == UserRole.owner && ownerCount <= 1;
+    // Đổi SĐT của CHÍNH MÌNH ở đây là tự khoá mình ra ngoài: hồ sơ chuyển sang
+    // uid mới, phiên đang chạy trỏ vào uid cũ đã bị xoá.
+    final isSelf = u.id == auth.user?.id;
+    String? error;
+    bool busy = false;
 
     await showModalBottomSheet(
       context: context,
@@ -217,11 +231,52 @@ class UserManagementScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  enabled: false,
-                  controller: TextEditingController(text: u.phone),
-                  decoration: const InputDecoration(
-                      labelText: 'Số điện thoại (không đổi được)'),
+                  controller: phoneC,
+                  enabled: !isSelf,
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: phoneInputFormatters,
+                  onChanged: (_) => setSheet(() => error = null),
+                  decoration: InputDecoration(
+                    labelText: isSelf
+                        ? 'Số điện thoại (không tự đổi số của mình)'
+                        : 'Số điện thoại (dùng để đăng nhập)',
+                  ),
                 ),
+                // Đổi SĐT = tạo tài khoản đăng nhập mới, nên bắt buộc đặt mật
+                // khẩu mới — Chủ không biết mật khẩu cũ của nhân viên.
+                if (!isSelf && _phoneChanged(u, phoneC.text)) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: passC,
+                    onChanged: (_) => setSheet(() => error = null),
+                    decoration: const InputDecoration(
+                      labelText: 'Mật khẩu mới (tối thiểu 6 ký tự)',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      'Đổi số là tạo lại tài khoản đăng nhập: người này phải '
+                      'đăng nhập bằng SĐT mới + mật khẩu vừa đặt. Số cũ '
+                      '${u.phone} sẽ KHÔNG dùng lại được nữa.',
+                      style: const TextStyle(fontSize: 12.5, height: 1.35),
+                    ),
+                  ),
+                ],
+                if (error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(error!,
+                      style: const TextStyle(
+                          color: AppColors.danger,
+                          fontWeight: FontWeight.w600)),
+                ],
                 if (lockRole) ...[
                   const SizedBox(height: 12),
                   const Text(
@@ -250,34 +305,90 @@ class UserManagementScreen extends StatelessWidget {
                 ],
                 const SizedBox(height: 20),
                 ElevatedButton(
-                  onPressed: () async {
-                    if (nameC.text.trim().isEmpty) {
-                      toast(ctx, 'Vui lòng nhập họ tên');
-                      return;
-                    }
-                    try {
-                      await db.updateUser(
-                        u.id,
-                        name: nameC.text.trim(),
-                        role: lockRole ? null : role,
-                      );
-                    } catch (e) {
-                      debugPrint('UPDATE-USER ERROR: $e');
-                      if (ctx.mounted) {
-                        toast(
-                            ctx,
-                            friendlyError(e,
-                                fallback: 'Không cập nhật được người dùng.'));
-                      }
-                      return;
-                    }
-                    if (u.id == auth.user?.id) await auth.refreshProfile();
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    if (context.mounted) {
-                      toast(context, 'Đã cập nhật người dùng');
-                    }
-                  },
-                  child: const Text('Lưu'),
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final name = nameC.text.trim();
+                          if (name.isEmpty) {
+                            setSheet(() => error = 'Vui lòng nhập họ tên');
+                            return;
+                          }
+                          final changedPhone =
+                              !isSelf && _phoneChanged(u, phoneC.text);
+                          if (changedPhone) {
+                            if (phoneC.text.trim().length < 8) {
+                              setSheet(() =>
+                                  error = 'Số điện thoại không hợp lệ');
+                              return;
+                            }
+                            if (passC.text.length < 6) {
+                              setSheet(() =>
+                                  error = 'Mật khẩu tối thiểu 6 ký tự');
+                              return;
+                            }
+                            final ok = await confirmDialog(
+                              ctx,
+                              title: 'Đổi số điện thoại?',
+                              message:
+                                  '${u.phone} → ${phoneC.text.trim()}\n\n'
+                                  'Tài khoản đăng nhập sẽ được tạo lại. Người '
+                                  'này phải dùng SĐT mới + mật khẩu vừa đặt. '
+                                  'Số cũ KHÔNG dùng lại được.',
+                              confirm: 'Đổi số',
+                            );
+                            if (!ok) return;
+                          }
+
+                          setSheet(() {
+                            busy = true;
+                            error = null;
+                          });
+                          try {
+                            if (changedPhone) {
+                              await AuthService().changePhoneAsAdmin(
+                                target: u,
+                                newPhone: phoneC.text.trim(),
+                                newPassword: passC.text,
+                                name: name,
+                                role: lockRole ? u.role : role,
+                              );
+                            } else {
+                              await db.updateUser(
+                                u.id,
+                                name: name,
+                                role: lockRole ? null : role,
+                              );
+                            }
+                          } catch (e) {
+                            debugPrint('UPDATE-USER ERROR: $e');
+                            setSheet(() {
+                              busy = false;
+                              error = friendlyError(e,
+                                  fallback:
+                                      'Không cập nhật được người dùng.');
+                            });
+                            return;
+                          }
+                          if (u.id == auth.user?.id) {
+                            await auth.refreshProfile();
+                          }
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (context.mounted) {
+                            toast(
+                                context,
+                                changedPhone
+                                    ? 'Đã đổi số đăng nhập thành '
+                                        '${phoneC.text.trim()}'
+                                    : 'Đã cập nhật người dùng');
+                          }
+                        },
+                  child: busy
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Text('Lưu'),
                 ),
                 const SizedBox(height: 16),
               ],
