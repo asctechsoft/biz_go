@@ -92,6 +92,13 @@ Màn `/delivery` (`DeliveryHubScreen`) 3 tab: **Chờ xuất phát** (`Db.orders
 - **`fl_chart`** cần chiều cao bounded (bọc `SizedBox`).
 - **Widget hệ thống ra tiếng Anh** (date/time picker, nút Cancel/OK, menu sao chép-dán) → thiếu `flutter_localizations`. `main.dart` đã khoá `locale: Locale('vi')` + 3 `GlobalXxxLocalizations.delegate`; đừng bỏ. Time picker bị ép 24h qua `MediaQuery(alwaysUse24HourFormat: true)` trong `builder` của `MaterialApp` cho khớp `fmtTime` (`HH:mm`).
 
+## Dung lượng bản build
+
+- **Debug nặng ~150MB là bình thường**, không phải app phình. Bóc APK debug ra: `kernel_blob.bin` (mã Dart dạng JIT) ~84MB + `libflutter.so` bản debug ~36MB + `isolate_snapshot_data` ~10MB + dex chưa qua R8 ~25MB. Assets của app chỉ ~1MB, tối ưu ảnh/font gần như vô nghĩa ở đây.
+- **Đã gỡ `libVkLayer_khronos_validation.so`** (15.25MB) trong `android/app/build.gradle.kts` → `packaging.jniLibs.excludes`. **Đo thực tế: file `.apk` KHÔNG nhỏ đi** (165.321.799 → 165.321.707 byte) dù archive mất đúng 15.25MB nội dung — APK debug dư rất nhiều khoảng đệm. Giữ vì bớt mã native vô ích lúc cài, nhưng đừng dùng nó để hy vọng giảm dung lượng.
+- **Debug mặc định build CẢ 3 ABI** (~103MB riêng phần native). Test trên máy thật thì thêm `--target-platform android-arm64`. `flutter run` vốn đã chỉ build ABI của máy đang cắm — đừng so dung lượng APK của `flutter run` với `flutter build apk --debug`, hai thứ khác nhau.
+- **Giao bản cho người khác dùng thì đừng đưa debug** — `flutter build apk --release --split-per-abi`, bản arm64 nhỏ hơn ~6-7 lần.
+
 ## Lệnh hay dùng
 
 ```bash

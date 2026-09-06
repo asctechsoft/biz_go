@@ -33,6 +33,19 @@ android {
         versionName = flutter.versionName
     }
 
+    // Engine debug nhét kèm lớp validation Vulkan 15.25MB. Nó CHỈ được nạp khi
+    // chạy với cờ `--enable-vulkan-validation`, app này không dùng.
+    //
+    // ĐO THỰC TẾ: gỡ nó bỏ đúng 15.25MB nội dung khỏi archive, NHƯNG file .apk
+    // trên đĩa gần như không đổi (165.321.799 → 165.321.707 byte) vì APK debug
+    // vốn đã dư rất nhiều khoảng đệm. Giữ lại vì bớt được mã native vô ích khi
+    // cài lên máy; đừng kỳ vọng .apk nhẹ đi. Cần soi lỗi Vulkan thì xoá khối này.
+    packaging {
+        jniLibs {
+            excludes += "**/libVkLayer_khronos_validation.so"
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
