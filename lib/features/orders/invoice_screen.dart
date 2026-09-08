@@ -198,35 +198,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     ),
                   ),
                 ),
-                // Mã kiện đặt ngay dưới tiêu đề để nhìn thấy đầu tiên.
-                if (o.packageCode != null) ...[
-                  const SizedBox(height: 6),
-                  Center(
-                    child: Text(
-                      'Mã kiện hàng: ${o.packageCode}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: .5,
-                      ),
-                    ),
-                  ),
-                ]
-                // Đơn đóng trước khi đổi sang mã kiện tự động.
-                else if (o.packageCount != null) ...[
-                  const SizedBox(height: 6),
-                  Center(
-                    child: Text(
-                      'Số kiện: ${o.packageCount}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 8),
                 _dashed(),
                 // Mã đơn + ngày

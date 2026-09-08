@@ -11,7 +11,12 @@ import '../../providers/auth_provider.dart';
 import '../../services/db.dart';
 import '../../widgets/common.dart';
 import '../delivery/delivery_actions.dart';
+import 'warehouse_actions.dart';
 
+/// Kho chỉ còn HAI việc: **Đóng hàng** rồi **Xuất phát**.
+///
+/// Không còn bước chuẩn bị hàng, không cấp mã kiện, không nhập khối lượng —
+/// đơn vừa tạo nằm ở tab đầu, bấm "Đóng hàng" là nhảy sang tab "Chờ xuất phát".
 class WarehouseScreen extends StatelessWidget {
   const WarehouseScreen({super.key});
 
@@ -19,10 +24,11 @@ class WarehouseScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final db = context.read<Db>();
     final role = context.watch<AuthProvider>().user?.role;
+    final canPack = role != null && Perm.warehouseOps(role);
     // Đóng hàng xong là cho đi luôn — không còn bước xếp chuyến.
     final canDepart = role != null && Perm.startDelivery(role);
     return DefaultTabController(
-      length: 3,
+      length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Kho & đóng hàng'),
@@ -37,8 +43,7 @@ class WarehouseScreen extends StatelessWidget {
                 TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
             labelPadding: EdgeInsets.symmetric(horizontal: 4),
             tabs: [
-              Tab(text: 'Chờ chuẩn bị'),
-              Tab(text: 'Chuẩn bị'),
+              Tab(text: 'Chờ đóng hàng'),
               Tab(text: 'Chờ xuất phát'),
             ],
           ),
@@ -54,6 +59,12 @@ class WarehouseScreen extends StatelessWidget {
             final all = snap.data!
                 .where((o) => o.orderStatus != OrderStatus.CANCELLED)
                 .toList();
+            // Chưa đóng hàng. Gộp luôn 3 trạng thái legacy của luồng "chuẩn bị
+            // hàng" cũ vào đây để đơn cũ đang kẹt giữa đường vẫn đóng được.
+            final toPack = all
+                .where((o) => o.warehouseStatus != WarehouseStatus.PACKED)
+                .toList()
+              ..sort(Order.byDepartOrder);
             // Đã đóng hàng mà CHƯA lên đường — đây là lô chờ bấm "Xuất phát".
             final packed = all
                 .where((o) =>
@@ -68,16 +79,7 @@ class WarehouseScreen extends StatelessWidget {
               ..sort(Order.byDepartOrder);
             return TabBarView(
               children: [
-                _list(context,
-                    all.where((o) => o.warehouseStatus == WarehouseStatus.WAITING).toList()),
-                _list(
-                    context,
-                    all
-                        .where((o) =>
-                            o.warehouseStatus == WarehouseStatus.PREPARING ||
-                            o.warehouseStatus == WarehouseStatus.PREPARED ||
-                            o.warehouseStatus == WarehouseStatus.PACKING)
-                        .toList()),
+                _toPackList(context, toPack, canPack),
                 _packedList(context, packed, canDepart),
               ],
             );
@@ -87,8 +89,11 @@ class WarehouseScreen extends StatelessWidget {
     );
   }
 
-  Widget _list(BuildContext context, List<Order> orders) {
-    if (orders.isEmpty) return const EmptyState(text: 'Không có đơn');
+  /// Tab "Chờ đóng hàng" — mỗi đơn một nút, bấm là xong luôn.
+  Widget _toPackList(BuildContext context, List<Order> orders, bool canPack) {
+    if (orders.isEmpty) {
+      return const EmptyState(text: 'Không có đơn nào chờ đóng hàng');
+    }
     return ListView.separated(
       padding: const EdgeInsets.all(12),
       itemCount: orders.length,
@@ -98,12 +103,38 @@ class WarehouseScreen extends StatelessWidget {
         return Card(
           child: ListTile(
             onTap: () => context.push('/orders/${o.id}'),
-            title: Text(o.code,
-                style: const TextStyle(fontWeight: FontWeight.w700)),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(o.code,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                ),
+                if (o.priority)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 6),
+                    child: Text('GẤP',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.danger)),
+                  ),
+                if (o.plannedDepartAt != null)
+                  Text(fmtDepartAt(o.plannedDepartAt),
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary)),
+              ],
+            ),
             subtitle: Text(
                 '${o.customerName} · ${o.items.length} mặt hàng\n${fmtTime(o.createdAt)}'),
             isThreeLine: true,
-            trailing: StatusChip(warehouseStatusUi(o.warehouseStatus), dense: true),
+            trailing: canPack
+                ? FilledButton(
+                    onPressed: () => packOrder(context, o),
+                    child: const Text('Đóng hàng'),
+                  )
+                : StatusChip(warehouseStatusUi(o.warehouseStatus), dense: true),
           ),
         );
       },
@@ -153,7 +184,7 @@ class WarehouseScreen extends StatelessWidget {
                     ],
                   ),
                   subtitle: Text(
-                      '${o.customerName}\n${o.packageCode ?? ''} · ${fmtWeight(o.weightKg, o.weightUnit)}'),
+                      '${o.customerName}\n${o.items.length} mặt hàng · ${fmtTime(o.createdAt)}'),
                   isThreeLine: true,
                   trailing: canDepart
                       ? FilledButton(

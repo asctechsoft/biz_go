@@ -24,14 +24,14 @@ App mobile **BizGo** — quản lý bán hàng / giao hàng / công nợ. **Flut
 - **carriers/{id}:** `{name, phone, nameLower}` — **danh mục nhà xe** (Cài đặt › Nhà xe, chỉ Chủ: `Perm.manageCarriers`). Chỉ là **sổ tay gợi ý**: form địa chỉ khách bấm chọn (`pickCarrier` trong `features/more/carriers_screen.dart`) thì điền sẵn tên + SĐT vào 2 ô, sửa lại được cho riêng địa chỉ đó. Địa chỉ khách chép ra `carrierName`/`carrierPhone`, đơn snapshot lần nữa → sửa/xoá nhà xe trong danh mục KHÔNG đổi địa chỉ đã lưu hay phiếu đã in. **Đừng** đổi sang lưu `carrierId` rồi join: số đã in phải đứng yên. Tên nhà xe unique (chặn trùng ở sheet thêm/sửa) để ô chọn không có 2 dòng y hệt.
 - **orders:** snapshot `items[]` (giá tại thời điểm đặt), snapshot địa chỉ giao + nhà xe (`deliveryCarrierName`/`deliveryCarrierPhone`), `timeline[]` nhúng, các cờ trạng thái, `paidAmount`, `remaining`, `plannedDepartAt`, `cancelReason`, `pushSent`(do noti-server set).
 - **notifications:** `{title, body, targetRoles[], refType, refId, at, read, icon, pushSent}` — noti-server đọc để push.
-- **counters/{kind_yyMMdd}:** sinh mã đơn `DHyyMMdd-NNN`, mã kiện `KIyyMMdd-NNN` (transaction).
+- **counters/{kind_yyMMdd}:** sinh mã đơn `DHyyMMdd-NNN` (transaction). Counter `package_yyMMdd` của mã kiện là **legacy**, không sinh nữa.
 
 > Query **tránh composite index**: lọc bằng `where` rồi `.sort()` trong Dart. Giữ nguyên kiểu này khi thêm query mới.
 
 ## Bộ trạng thái (`lib/core/enums.dart`, spec §18)
 
 - `OrderStatus`: NEW · CONFIRMED · PROCESSING · COMPLETED · CANCELLED
-- `WarehouseStatus`: WAITING · PREPARING · PREPARED · PACKING · PACKED
+- `WarehouseStatus`: WAITING (nhãn "Chờ đóng hàng") · PACKED. **PREPARING · PREPARED · PACKING là legacy** của luồng "chuẩn bị hàng" đã bỏ — chỉ đọc cho đơn cũ, KHÔNG ghi mới.
 - `DeliveryStatus`: WAITING_ASSIGNMENT (nhãn "Chờ xuất phát") · ON_THE_WAY · DELIVERED · FAILED · RESCHEDULED · RETURNED. **ASSIGNED · LOADING · ARRIVED là legacy** của luồng chuyến xe cũ — chỉ đọc cho đơn cũ, KHÔNG ghi mới. Ô lọc dùng `deliveryStatusFilterValues`.
 - `PaymentStatus`: UNPAID · PARTIAL · PAID · REFUNDED · COD · DEBT
 - **`UserRole`: owner (Chủ) · checker (Kiểm hàng) · warehouse (Kiểm kho)** — CHỈ 3 vai trò, KHÔNG còn `shipper`. `roleFromName` fallback về `warehouse` (quyền thấp nhất), nên hồ sơ cũ còn `role: 'shipper'` tự rơi về Kiểm kho.
@@ -58,8 +58,8 @@ Enum lưu Firestore bằng `.name`. Nhãn tiếng Việt + màu qua các hàm `*
 ## Quy ước bắt buộc (đừng phá)
 
 - **Tiền = `int` đồng.** Format bằng `money()` (`lib/core/formatters.dart`). Không float.
-- **Khối lượng = `double` kg.** `order.weightKg` LUÔN quy về kg; `order.weightUnit` (`kg`/`tạ`/`tấn`, hệ số ở `weightUnits`) chỉ để hiển thị lại đúng đơn vị đã nhập — dùng `fmtWeight()`. Không lưu số theo đơn vị người dùng chọn.
-- **Mã kiện tự sinh.** Đóng hàng xong → `Db.nextPackageCode()` cấp `KIyyMMdd-NNN` (counter `package_yyMMdd`), hiện sẵn read-only trong dialog; người dùng CHỈ nhập khối lượng + đơn vị. `order.packageCount` là **legacy** (số kiện nhập tay trước đây) — chỉ đọc để hiện đơn cũ, không ghi mới.
+- **Kho chỉ có MỘT bước: Đóng hàng.** WAITING → bấm là PACKED (`Db.markPacked(o, actorId, actorName)`), không dialog, không mã kiện, không khối lượng. Thao tác UI dùng chung ở `lib/features/warehouse/warehouse_actions.dart` (`packOrder`) — sửa nghiệp vụ kho thì sửa ở đó. Nút hiện khi `warehouseStatus != PACKED` nên đơn cũ kẹt ở PREPARING/PREPARED/PACKING vẫn đi tiếp được; `Db.markPacked` tự bỏ qua đơn đã đóng (không sinh timeline rác) và chặn đơn đã hủy.
+- **`order.packageCode` · `packageCount` · `weightKg` · `weightUnit` là LEGACY.** Không ghi mới, không hiện ở đâu nữa (kể cả **trên phiếu in**) — chỉ giữ trong `Order` để đơn cũ đọc/ghi lại không mất dữ liệu. `fmtWeight()`/`weightUnits`/`packageCode()` đã xoá khỏi `formatters.dart`; muốn hiện lại khối lượng thì phải viết lại.
 - **KHÔNG có tầng danh mục.** Cấu trúc là **Sản phẩm → Phân loại (variant) → Quy cách (packaging) → Giá**. Doc `products` cũ còn `categoryId`/`categoryName` thì cứ để, code không đọc tới. Tab ở bước Chọn sản phẩm là **tên sản phẩm**, mỗi tab liệt kê phân loại + quy cách của nó.
 - **Sửa giá từng dòng khi tạo đơn.** Bảng giá (`Packaging.price`) chỉ là **giá mặc định**: ở bước Chọn sản phẩm / Giỏ hàng, chạm vào dòng hàng mở sheet `_lineSheet` sửa cả **số lượng** (gõ thẳng, không phải bấm +/- nhiều lần) lẫn **đơn giá**, có nút "Dùng giá bảng" để quay lại. Giá gốc nhớ trong `_listPrice` (packagingId → giá bảng) để còn biết dòng nào đã sửa tay.
 - **Phân loại (`variantName`) là thứ phân biệt các dòng hàng.** Cùng sản phẩm + quy cách vẫn có nhiều phân loại giá khác nhau, nên danh sách chọn hàng và giỏ hàng lấy **phân loại làm tiêu đề** (`OrderItem.variantLabel`), sản phẩm + quy cách + giá xuống dòng dưới. Bỏ phân loại đi là mấy dòng trông y hệt nhau.
@@ -78,7 +78,9 @@ Enum lưu Firestore bằng `.name`. Nhãn tiếng Việt + màu qua các hàm `*
 
 ## Luồng chính
 
-Tạo đơn (owner; bước Xác nhận chọn **giờ xuất phát dự kiến**, để trống thì xếp theo giờ tạo) → notify checker → kho: WAITING→PREPARING→PREPARED→**PACKING**→PACKED → **Xuất phát** (owner/checker, bấm từng đơn hoặc "Xuất phát tất cả" ở tab Kho › Chờ xuất phát hoặc tab Giao hàng › Chờ xuất phát) → `ON_THE_WAY` → **cuối ngày owner đối soát** ở tab Giao hàng › Đang giao: Giao thành công (mở sheet thu tiền, tạo payment) hoặc Không giao được (FAILED/RESCHEDULED/RETURNED; RESCHEDULED quay lại danh sách chờ xuất phát) → công nợ còn lại thu sau (FIFO nhiều đơn qua `Db.collectCustomerDebt`).
+Tạo đơn (owner; bước Xác nhận chọn **giờ xuất phát dự kiến**, để trống thì xếp theo giờ tạo) → notify checker → kho bấm **Đóng hàng** (WAITING → PACKED, một cú bấm, không hỏi gì) → **Xuất phát** (owner/checker, bấm từng đơn hoặc "Xuất phát tất cả" ở tab Kho › Chờ xuất phát hoặc tab Giao hàng › Chờ xuất phát) → `ON_THE_WAY` → **cuối ngày owner đối soát** ở tab Giao hàng › Đang giao: Giao thành công (mở sheet thu tiền, tạo payment) hoặc Không giao được (FAILED/RESCHEDULED/RETURNED; RESCHEDULED quay lại danh sách chờ xuất phát) → công nợ còn lại thu sau (FIFO nhiều đơn qua `Db.collectCustomerDebt`).
+
+Màn `/warehouse` (`WarehouseScreen`) 2 tab: **Chờ đóng hàng** (mọi đơn chưa PACKED, mỗi đơn một nút Đóng hàng) · **Chờ xuất phát**.
 
 Màn `/delivery` (`DeliveryHubScreen`) 3 tab: **Chờ xuất phát** (`Db.ordersWaitingDepart`) · **Đang giao** (`Db.ordersDelivering`, kèm tổng tiền cần thu) · **Xong hôm nay** (`Db.ordersSettledOn`).
 

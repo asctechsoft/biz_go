@@ -33,6 +33,11 @@ UserRole roleFromName(String? n) => UserRole.values.firstWhere(
 enum OrderStatus { NEW, CONFIRMED, PROCESSING, COMPLETED, CANCELLED }
 
 // §18.2 Warehouse Status
+//
+// Luồng kho hiện tại chỉ dùng: WAITING (đơn vừa tạo, chờ đóng hàng) → PACKED
+// (bấm "Đóng hàng" là xong, không cấp mã kiện, không nhập khối lượng).
+// PREPARING · PREPARED · PACKING là **legacy** của luồng "chuẩn bị hàng" đã bỏ
+// — giữ lại để đơn cũ trong Firestore vẫn đọc/hiển thị đúng, KHÔNG ghi mới.
 enum WarehouseStatus { WAITING, PREPARING, PREPARED, PACKING, PACKED }
 
 // §18.3 Delivery Status
@@ -93,7 +98,8 @@ StatusUi orderStatusUi(OrderStatus s) => switch (s) {
 };
 
 StatusUi warehouseStatusUi(WarehouseStatus s) => switch (s) {
-  WarehouseStatus.WAITING => const StatusUi('Chờ lấy hàng', AppColors.info),
+  WarehouseStatus.WAITING => const StatusUi('Chờ đóng hàng', AppColors.info),
+  // 3 nhãn dưới đây chỉ còn gặp ở đơn cũ (luồng "chuẩn bị hàng" đã bỏ).
   WarehouseStatus.PREPARING => const StatusUi(
     'Đang chuẩn bị',
     AppColors.warning,

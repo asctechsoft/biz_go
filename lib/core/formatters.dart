@@ -61,22 +61,3 @@ String fmtDepartAt(DateTime? d) {
 String orderCode(DateTime d, int seq) =>
     'DH${DateFormat('yyMMdd').format(d)}-${seq.toString().padLeft(3, '0')}';
 
-/// Package code: KIyyMMdd-NNN — sinh tự động lúc đóng hàng xong.
-String packageCode(DateTime d, int seq) =>
-    'KI${DateFormat('yyMMdd').format(d)}-${seq.toString().padLeft(3, '0')}';
-
-/// Đơn vị khối lượng cho bước đóng hàng, kèm hệ số quy về kg.
-/// `weightKg` trong Firestore LUÔN lưu theo kg; `weightUnit` chỉ để hiển thị
-/// lại đúng đơn vị người dùng đã nhập.
-const weightUnits = <String, num>{'kg': 1, 'tạ': 100, 'tấn': 1000};
-
-final _weightFmt = NumberFormat.decimalPattern('vi_VN')
-  ..maximumFractionDigits = 3;
-
-/// 1500 kg + 'tấn' → "1,5 tấn". Đơn vị lạ thì rơi về kg.
-String fmtWeight(double? kg, [String unit = 'kg']) {
-  if (kg == null) return '--';
-  final factor = weightUnits[unit] ?? 1;
-  final u = weightUnits.containsKey(unit) ? unit : 'kg';
-  return '${_weightFmt.format(kg / factor)} $u';
-}

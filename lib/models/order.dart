@@ -154,16 +154,13 @@ class Order {
   final String deliveryNote; // ghi chú giao hàng
   final String? cancelReason;
 
-  // packing info
-  /// Mã kiện `KIyyMMdd-NNN`, sinh tự động khi đóng hàng xong.
+  // ---- packing info: TOÀN BỘ LEGACY ----
+  //
+  // Bước đóng hàng giờ chỉ là một cú bấm: không cấp mã kiện, không nhập khối
+  // lượng nữa. 4 field dưới đây KHÔNG ghi mới — giữ lại để đơn cũ trong
+  // Firestore đọc/ghi lại không mất dữ liệu (`toMap` vẫn chép nguyên).
   final String? packageCode;
-
-  /// Số kiện — LEGACY: trước đây nhập tay, giờ thay bằng [packageCode].
-  /// Giữ lại để đơn đã đóng trước khi đổi vẫn hiển thị đúng.
   final int? packageCount;
-
-  /// Khối lượng, LUÔN quy về **kg**. [weightUnit] chỉ để hiển thị lại đúng
-  /// đơn vị đã nhập (`kg` / `tạ` / `tấn`) — xem `fmtWeight()`.
   final double? weightKg;
   final String weightUnit;
 

@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/db.dart';
 import '../../widgets/common.dart';
 import '../delivery/delivery_actions.dart';
+import '../warehouse/warehouse_actions.dart';
 import 'create/create_order_screen.dart';
 import 'invoice_screen.dart';
 import 'payment_sheet.dart';
@@ -207,12 +208,6 @@ class OrderDetailScreen extends StatelessWidget {
                     // Chỉ Chủ đọc — có thể ghi chuyện giá cả, mặc cả.
                     if (showMoney && o.note.isNotEmpty)
                       KVRow('Ghi chú nội bộ', o.note),
-                    if (o.packageCode != null)
-                      KVRow('Mã kiện', o.packageCode!)
-                    else if (o.packageCount != null)
-                      KVRow('Số kiện', '${o.packageCount}'), // đơn đóng cũ
-                    if (o.weightKg != null)
-                      KVRow('Khối lượng', fmtWeight(o.weightKg, o.weightUnit)),
                     if (o.deliveryMapUrl.isNotEmpty ||
                         o.deliveryAddress.isNotEmpty) ...[
                       const SizedBox(height: 8),
@@ -512,16 +507,13 @@ class _Stepper extends StatelessWidget {
 
   int get _stage {
     final o = order;
-    if (o.deliveryStatus == DeliveryStatus.DELIVERED) return 4;
+    if (o.deliveryStatus == DeliveryStatus.DELIVERED) return 3;
     // Đã rời kho (kể cả trạng thái legacy của luồng chuyến xe cũ).
     if (o.deliveryStatus.index >= DeliveryStatus.ASSIGNED.index &&
         o.deliveryStatus != DeliveryStatus.WAITING_ASSIGNMENT)
-      return 3;
-    if (o.warehouseStatus == WarehouseStatus.PACKED) return 2;
-    if (o.warehouseStatus == WarehouseStatus.PREPARING ||
-        o.warehouseStatus == WarehouseStatus.PREPARED ||
-        o.warehouseStatus == WarehouseStatus.PACKING)
-      return 1;
+      return 2;
+    // Kho chỉ còn MỘT bước: chưa đóng hàng thì vẫn đứng ở "Mới tạo".
+    if (o.warehouseStatus == WarehouseStatus.PACKED) return 1;
     return 0;
   }
 
@@ -529,7 +521,6 @@ class _Stepper extends StatelessWidget {
   Widget build(BuildContext context) {
     const labels = [
       'Mới tạo',
-      'Chuẩn bị',
       'Đóng hàng',
       'Giao hàng',
       'Hoàn thành',
@@ -695,20 +686,12 @@ class _ActionBar extends StatelessWidget {
     }
     final role = user.role;
 
-    // Warehouse flow — Kiểm hàng / Chủ.
-    if (Perm.warehouseOps(role)) {
-      if (o.warehouseStatus == WarehouseStatus.WAITING) {
-        add('Bắt đầu chuẩn bị', () => db.startPreparing(o, user.id, user.name));
-      } else if (o.warehouseStatus == WarehouseStatus.PREPARING) {
-        add('Đã chuẩn bị xong', () => db.markPrepared(o, user.id, user.name));
-      } else if (o.warehouseStatus == WarehouseStatus.PREPARED) {
-        add('Bắt đầu đóng hàng', () => db.startPacking(o, user.id, user.name));
-      } else if (o.warehouseStatus == WarehouseStatus.PACKING) {
-        add(
-          'Đóng hàng xong',
-          () => _packDialog(context, db, o, user.id, user.name),
-        );
-      }
+    // Kho — Kiểm hàng / Chủ. Một bước duy nhất: bấm là đóng hàng xong, không
+    // hỏi mã kiện/khối lượng. Đơn cũ còn kẹt ở PREPARING/PREPARED/PACKING
+    // (luồng chuẩn bị hàng đã bỏ) cũng hiện đúng nút này để đi tiếp.
+    if (Perm.warehouseOps(role) &&
+        o.warehouseStatus != WarehouseStatus.PACKED) {
+      add('Đóng hàng', () => packOrder(context, o));
     }
 
     // Đóng hàng xong → cho đi. Chủ + Kiểm hàng (KHÔNG còn bước xếp chuyến).
@@ -763,151 +746,6 @@ class _ActionBar extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  Future<void> _packDialog(
-    BuildContext context,
-    Db db,
-    Order o,
-    String uid,
-    String uname,
-  ) async {
-    // Mã kiện cấp trước để hiện sẵn trong dialog. Lỗi mạng thì để null →
-    // markPacked tự cấp lúc lưu.
-    String? code;
-    try {
-      code = await db.nextPackageCode();
-    } catch (_) {
-      code = null;
-    }
-    if (!context.mounted) return;
-
-    final weightC = TextEditingController();
-    final noteC = TextEditingController();
-    String unit = 'kg';
-    String? error;
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) => AlertDialog(
-          title: const Text('Đóng hàng xong'),
-          // Bàn phím số bật lên ăn hơn nửa màn hình → dialog bị bóp lại và tràn
-          // đáy ("BOTTOM OVERFLOWED BY 25 PIXELS"), rõ nhất khi hiện thêm dòng
-          // báo lỗi đỏ. Cho nội dung cuộn được thì cao bao nhiêu cũng chịu.
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Mã kiện tự sinh — chỉ đọc, không cho sửa.
-                  TextField(
-                    enabled: false,
-                    controller: TextEditingController(
-                      text: code ?? 'Sẽ tạo khi lưu',
-                    ),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText: 'Mã kiện (tự động)',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: weightC,
-                    autofocus: true,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    onChanged: (_) {
-                      if (error != null) setDlg(() => error = null);
-                    },
-                    decoration: const InputDecoration(labelText: 'Khối lượng'),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Đơn vị',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final u in weightUnits.keys)
-                        ChoiceChip(
-                          label: Text(u),
-                          selected: unit == u,
-                          onSelected: (_) => setDlg(() => unit = u),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: noteC,
-                    decoration: const InputDecoration(labelText: 'Ghi chú'),
-                  ),
-                  if (error != null) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      error!,
-                      style: const TextStyle(
-                        color: AppColors.danger,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Hủy'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(minimumSize: const Size(80, 40)),
-              onPressed: () {
-                if (_parseWeight(weightC.text) == null) {
-                  setDlg(() => error = 'Nhập khối lượng lớn hơn 0');
-                  return;
-                }
-                Navigator.pop(ctx, true);
-              },
-              child: const Text('Xác nhận'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok == true) {
-      // Quy về kg trước khi lưu (Firestore luôn giữ kg).
-      final value = _parseWeight(weightC.text)!;
-      await db.markPacked(
-        o,
-        uid,
-        uname,
-        code: code,
-        weightKg: value * weightUnits[unit]!.toDouble(),
-        weightUnit: unit,
-        note: noteC.text.trim(),
-      );
-      if (context.mounted) toast(context, 'Đã đóng hàng, chờ xuất phát');
-    }
-  }
-
-  /// Khối lượng người dùng nhập — nhận cả dấu phẩy kiểu VN ("1,5"), trả về
-  /// null nếu không hợp lệ hoặc <= 0.
-  static double? _parseWeight(String s) {
-    final v = double.tryParse(s.trim().replaceAll(',', '.'));
-    return (v == null || v <= 0) ? null : v;
   }
 
   Future<void> _collectFlow(

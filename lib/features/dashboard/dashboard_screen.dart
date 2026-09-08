@@ -55,9 +55,6 @@ class DashboardScreen extends StatelessWidget {
 
           final revenueToday = today.fold<int>(0, (s, o) => s + o.total);
           final revenueYest = yesterday.fold<int>(0, (s, o) => s + o.total);
-          final delivering = orders
-              .where((o) => o.deliveryStatus == DeliveryStatus.ON_THE_WAY)
-              .length;
           final debt = active.fold<int>(
             0,
             (s, o) => s + (o.remaining > 0 ? o.remaining : 0),
@@ -82,7 +79,6 @@ class DashboardScreen extends StatelessWidget {
                       yestCount: yesterday.length,
                       revenueToday: revenueToday,
                       revenueYest: revenueYest,
-                      delivering: delivering,
                       debt: debt,
                     ),
                   ),
@@ -272,19 +268,18 @@ class _BellButton extends StatelessWidget {
   }
 }
 
-// ------------------------- Stat cards (4 in a row) -------------------------
+// ------------------------- Stat cards (3 in a row) -------------------------
 class _StatRow extends StatelessWidget {
   /// Chiều cao hàng thẻ. Dòng so sánh xuống 2 hàng nên cần cao hơn trước —
   /// `_Header` bên ngoài phải dùng đúng hằng này, đừng chép số cứng.
   static const height = 142.0;
 
-  final int todayCount, yestCount, revenueToday, revenueYest, delivering, debt;
+  final int todayCount, yestCount, revenueToday, revenueYest, debt;
   const _StatRow({
     required this.todayCount,
     required this.yestCount,
     required this.revenueToday,
     required this.revenueYest,
-    required this.delivering,
     required this.debt,
   });
 
@@ -310,12 +305,6 @@ class _StatRow extends StatelessWidget {
             label: 'Doanh thu',
             value: money(revenueToday),
             trend: _diff(revenueToday, revenueYest, money_: true),
-          ),
-          _StatCard(
-            icon: Icons.local_shipping,
-            color: AppColors.success,
-            label: 'Đang giao',
-            value: '$delivering',
           ),
           _StatCard(
             icon: Icons.account_balance_wallet,
@@ -851,10 +840,11 @@ class _TodoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final packing = orders
+    // Chưa đóng hàng — kho chỉ còn một bước "Đóng hàng".
+    final toPack = orders
         .where(
           (o) =>
-              o.warehouseStatus == WarehouseStatus.PREPARED &&
+              o.warehouseStatus != WarehouseStatus.PACKED &&
               o.orderStatus != OrderStatus.CANCELLED,
         )
         .length;
@@ -912,8 +902,8 @@ class _TodoCard extends StatelessWidget {
                   context,
                   Icons.inventory_2,
                   AppColors.warning,
-                  'Đơn chờ đóng gói',
-                  packing,
+                  'Đơn chờ đóng hàng',
+                  toPack,
                   '/warehouse',
                 ),
                 _todo(

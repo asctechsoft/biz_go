@@ -825,79 +825,31 @@ class Db {
     });
   }
 
-  // ---------- Warehouse transitions (spec §9) ----------
-  Future<void> startPreparing(Order o, String actorId, String actorName) =>
-      _warehouseStep(
-        o,
-        WarehouseStatus.PREPARING,
-        OrderStatus.PROCESSING,
-        'Kho bắt đầu chuẩn bị',
-        actorId,
-        actorName,
-      );
-
-  Future<void> markPrepared(Order o, String actorId, String actorName) async {
-    await _warehouseStep(
-      o,
-      WarehouseStatus.PREPARED,
-      OrderStatus.PROCESSING,
-      'Kho đã chuẩn bị xong',
-      actorId,
-      actorName,
-    );
-    await _notify(
-      title: 'Đơn ${o.code} chờ đóng hàng',
-      body: 'Kho đã chuẩn bị xong',
-      refType: NotifRefType.order,
-      refId: o.id,
-      roles: {UserRole.checker},
-      icon: 'box',
-    );
-  }
-
-  /// §8 intermediate: packer starts packing (PREPARED → PACKING).
-  Future<void> startPacking(Order o, String actorId, String actorName) =>
-      _warehouseStep(
-        o,
-        WarehouseStatus.PACKING,
-        OrderStatus.PROCESSING,
-        'Bắt đầu đóng hàng',
-        actorId,
-        actorName,
-      );
-
-  /// Cấp mã kiện kế tiếp `KIyyMMdd-NNN`. Gọi lúc mở dialog "Đóng hàng xong"
-  /// để hiện mã sẵn; huỷ dialog thì số đó bị bỏ (giống mã đơn, có thể khuyết
-  /// số — chấp nhận được, đổi lấy việc mã hiện ngay).
-  Future<String> nextPackageCode([DateTime? day]) async {
-    final now = day ?? DateTime.now();
-    return packageCode(now, await _nextSeq('package', now));
-  }
-
-  /// [weightKg] phải đã quy về kg; [weightUnit] chỉ để hiển thị lại.
-  /// [code] là mã kiện đã cấp sẵn ở dialog — null thì tự cấp ở đây.
-  Future<void> markPacked(
-    Order o,
-    String actorId,
-    String actorName, {
-    String? code,
-    double? weightKg,
-    String weightUnit = 'kg',
-    String note = '',
-  }) async {
-    final pkgCode = code ?? await nextPackageCode();
+  // ---------- Kho: ĐÓNG HÀNG, một bước duy nhất ----------
+  //
+  // Luồng kho gọn còn: đơn tạo xong (WAITING) → bấm **Đóng hàng** (PACKED) →
+  // **Xuất phát**. KHÔNG còn PREPARING/PREPARED/PACKING (3 trạng thái đó thành
+  // legacy, chỉ đọc cho đơn cũ) và KHÔNG còn cấp mã kiện `KIyyMMdd-NNN` hay
+  // nhập khối lượng lúc đóng — `packageCode`/`weightKg`/`weightUnit` cũng thành
+  // legacy, không ghi mới nữa. Đơn cũ đang kẹt ở trạng thái giữa vẫn bấm được
+  // nút này để đi tiếp.
+  Future<void> markPacked(Order o, String actorId, String actorName) async {
+    // Chốt ở tầng Db chứ không chỉ ở UI: 2 người mở cùng một đơn thì trên máy
+    // ai cũng còn thấy nút. Bấm lại đơn đã đóng thì bỏ qua, không sinh timeline
+    // rác (cùng quy tắc với `departOrder`).
+    if (o.warehouseStatus == WarehouseStatus.PACKED) return;
+    if (o.orderStatus == OrderStatus.CANCELLED) {
+      throw Exception('Đơn đã hủy.');
+    }
     await _orders.doc(o.id).update({
       'warehouseStatus': WarehouseStatus.PACKED.name,
-      'packageCode': pkgCode,
-      'weightKg': weightKg,
-      'weightUnit': weightUnit,
+      'orderStatus': OrderStatus.PROCESSING.name,
     });
     await _appendTimeline(
       o.id,
       TimelineEvent(
         at: DateTime.now(),
         title: 'Đóng hàng xong',
-        note: note,
         actorId: actorId,
         actorName: actorName,
       ),
@@ -909,53 +861,15 @@ class Db {
       actorId: actorId,
       actorName: actorName,
       before: {'warehouseStatus': o.warehouseStatus.name},
-      after: {
-        'warehouseStatus': WarehouseStatus.PACKED.name,
-        'packageCode': pkgCode,
-        'weightKg': weightKg,
-        'weightUnit': weightUnit,
-      },
+      after: {'warehouseStatus': WarehouseStatus.PACKED.name},
     );
     await _notify(
       title: 'Đơn ${o.code} chờ xuất phát',
-      body: 'Đã đóng hàng · $pkgCode · ${fmtWeight(weightKg, weightUnit)}',
+      body: 'Kho đã đóng hàng xong',
       refType: NotifRefType.order,
       refId: o.id,
       roles: {UserRole.owner},
       icon: 'truck',
-    );
-  }
-
-  Future<void> _warehouseStep(
-    Order o,
-    WarehouseStatus ws,
-    OrderStatus os,
-    String title,
-    String actorId,
-    String actorName,
-  ) async {
-    await _orders.doc(o.id).update({
-      'warehouseStatus': ws.name,
-      'orderStatus': os.name,
-    });
-    await _appendTimeline(
-      o.id,
-      TimelineEvent(
-        at: DateTime.now(),
-        title: title,
-        actorId: actorId,
-        actorName: actorName,
-      ),
-    );
-    await _audit(
-      action: 'warehouse_step',
-      entityType: 'order',
-      entityId: o.id,
-      actorId: actorId,
-      actorName: actorName,
-      before: {'warehouseStatus': o.warehouseStatus.name},
-      after: {'warehouseStatus': ws.name},
-      note: title,
     );
   }
 

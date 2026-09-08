@@ -146,23 +146,6 @@ class InvoicePdf {
                   fontSize: 19,
                   fontWeight: pw.FontWeight.bold,
                   letterSpacing: 1)),
-          if (o.packageCode != null) ...[
-            pw.SizedBox(height: 5),
-            pw.Text(
-                'Mã kiện hàng: ${o.packageCode}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
-                textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(
-                    fontSize: 16, fontWeight: pw.FontWeight.bold)),
-          ]
-          // Đơn đóng trước khi đổi sang mã kiện tự động.
-          else if (o.packageCount != null) ...[
-            pw.SizedBox(height: 5),
-            pw.Text(
-                'Số kiện: ${o.packageCount}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
-                textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(
-                    fontSize: 16, fontWeight: pw.FontWeight.bold)),
-          ],
         ],
         ),
       );
