@@ -15,12 +15,13 @@ App mobile **BizGo** — quản lý bán hàng / giao hàng / công nợ. **Flut
 
 ## Firestore collections
 
-`users` · `products` · `customers` · `orders` · `payments` · `notifications` · `price_history` · `audit_logs` · `counters` · `meta`.
+`users` · `products` · `customers` · `carriers` · `orders` · `payments` · `notifications` · `price_history` · `audit_logs` · `counters` · `meta`.
 
 > `categories` · `vehicles` · `drivers` · `trips` là **legacy** — phân hệ chuyến xe/tài xế đã bỏ. Code không đọc/ghi nữa, chỉ còn nằm trong danh sách xoá của `Db.clearAllData` để dọn dữ liệu cũ.
 
 - **users/{uid}:** `{name, phone, role, active, fcmTokens[], mustChangeCredentials?}`. `role` = tên enum (`owner`/`checker`/`warehouse`). `mustChangeCredentials` KHÔNG nằm trong `AppUser.toMap()` (tránh bị `set(merge)` reset) — chỉ ghi ở chỗ cố ý.
 - **customers.addresses[]:** `{id, receiver, phone, address, carrierName, carrierPhone, note, mapUrl, isDefault}`. `note` = dặn dò cố định của địa chỉ ("gọi trước khi tới"), snapshot sang `order.deliveryAddressNote`. KHÔNG còn `label` ("Tên địa chỉ") — bản thân địa chỉ đã đủ nhận biết; doc cũ còn field đó thì cứ để, code không đọc tới. `carrierName`/`carrierPhone` = **nhà xe** chở hàng tới địa chỉ đó, để trống nếu giao thẳng.
+- **carriers/{id}:** `{name, phone, nameLower}` — **danh mục nhà xe** (Cài đặt › Nhà xe, chỉ Chủ: `Perm.manageCarriers`). Chỉ là **sổ tay gợi ý**: form địa chỉ khách bấm chọn (`pickCarrier` trong `features/more/carriers_screen.dart`) thì điền sẵn tên + SĐT vào 2 ô, sửa lại được cho riêng địa chỉ đó. Địa chỉ khách chép ra `carrierName`/`carrierPhone`, đơn snapshot lần nữa → sửa/xoá nhà xe trong danh mục KHÔNG đổi địa chỉ đã lưu hay phiếu đã in. **Đừng** đổi sang lưu `carrierId` rồi join: số đã in phải đứng yên. Tên nhà xe unique (chặn trùng ở sheet thêm/sửa) để ô chọn không có 2 dòng y hệt.
 - **orders:** snapshot `items[]` (giá tại thời điểm đặt), snapshot địa chỉ giao + nhà xe (`deliveryCarrierName`/`deliveryCarrierPhone`), `timeline[]` nhúng, các cờ trạng thái, `paidAmount`, `remaining`, `plannedDepartAt`, `cancelReason`, `pushSent`(do noti-server set).
 - **notifications:** `{title, body, targetRoles[], refType, refId, at, read, icon, pushSent}` — noti-server đọc để push.
 - **counters/{kind_yyMMdd}:** sinh mã đơn `DHyyMMdd-NNN`, mã kiện `KIyyMMdd-NNN` (transaction).

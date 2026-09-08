@@ -9,14 +9,14 @@ Flutter + Firebase. Một đơn hàng có đầy đủ vòng đời: **tạo đ�
 
 ## 1. Công nghệ
 
-| Mảng | Dùng |
-|------|------|
-| UI | Flutter (Material 3), `go_router`, `provider` |
-| Backend | Firebase **Auth** (email/password) + **Cloud Firestore** |
-| Biểu đồ | `fl_chart` (donut, line) |
-| Ảnh | `image_picker` + `flutter_image_compress` — **lưu local trên máy**, Firestore chỉ giữ đường dẫn |
-| Push | `firebase_messaging` (app) + **noti-server** Node.js (Admin SDK) |
-| Khác | `flutter_slidable`, `url_launcher`, `flutter_launcher_icons` |
+| Mảng      | Dùng                                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------- |
+| UI         | Flutter (Material 3),`go_router`, `provider`                                                                    |
+| Backend    | Firebase**Auth** (email/password) + **Cloud Firestore**                                                 |
+| Biểu đồ | `fl_chart` (donut, line)                                                                                          |
+| Ảnh       | `image_picker` + `flutter_image_compress` — **lưu local trên máy**, Firestore chỉ giữ đường dẫn |
+| Push       | `firebase_messaging` (app) + **noti-server** Node.js (Admin SDK)                                            |
+| Khác      | `flutter_slidable`, `url_launcher`, `flutter_launcher_icons`                                                  |
 
 - **Firebase project:** `bizgo-877df` · **Android package:** `com.asc.bizgo`
 - Auth dùng email/password nhưng **đăng nhập bằng SĐT**: SĐT được map thành `<số>@bizgo.local`.
@@ -63,14 +63,17 @@ flutter analyze             # kiểm tra lỗi
 ```
 
 ### Build APK
+
 ```bash
 flutter build apk --release                 # 1 file (~40-55MB)
 flutter build apk --release --split-per-abi # tách theo CPU, arm64 ~18-25MB
 flutter build appbundle --release           # cho Google Play
 ```
+
 APK ra tại `build/app/outputs/flutter-apk/`.
 
 ### Icon launcher (khi đổi logo)
+
 ```bash
 dart run flutter_launcher_icons   # đọc assets/images/logo_app.png
 ```
@@ -83,8 +86,8 @@ dart run flutter_launcher_icons   # đọc assets/images/logo_app.png
 
 Chỉ có **một** tài khoản bootstrap: `0900000000` / `123456` (điền sẵn ở màn login). Đăng nhập lần đầu app khoá ở màn **Thiết lập tài khoản** — bắt đổi SĐT đăng nhập + mật khẩu mới cho vào. Các tài khoản khác do Chủ tự tạo sau.
 
-| SĐT | Vai trò | Thấy gì |
-|-----|---------|---------|
+| SĐT           | Vai trò               | Thấy gì                                                                                                 |
+| -------------- | ---------------------- | --------------------------------------------------------------------------------------------------------- |
 | `0900000000` | **Chủ** (owner) | tất cả: đơn, khách, sản phẩm, giao hàng, thu tiền, báo cáo, quản lý người dùng, nhật ký |
 
 > Số bootstrap chỉ "mọc" ra Chủ khi `users` **chưa có Chủ nào** — không phải cửa hậu.
@@ -93,11 +96,11 @@ Chỉ có **một** tài khoản bootstrap: `0900000000` / `123456` (điền s�
 
 ## 6. Phân quyền (RBAC) — 3 vai trò
 
-| Vai trò | Làm được |
-|---------|----------|
-| **Chủ** (owner) | toàn quyền. Người **duy nhất** xem Tổng quan (doanh thu) và đối soát giao hàng + thu tiền |
-| **Kiểm hàng** (checker) | kho/đóng hàng/in phiếu, xem đơn, bấm **Xuất phát**. KHÔNG thấy Tổng quan, KHÔNG thấy bất kỳ con số tiền nào |
-| **Kiểm kho** (warehouse) | chỉ thao tác kho + xem đơn. KHÔNG thấy Tổng quan, KHÔNG thấy tiền |
+| Vai trò                        | Làm được                                                                                                                        |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Chủ** (owner)          | toàn quyền. Người**duy nhất** xem Tổng quan (doanh thu) và đối soát giao hàng + thu tiền                          |
+| **Kiểm hàng** (checker) | kho/đóng hàng/in phiếu, xem đơn, bấm**Xuất phát**. KHÔNG thấy Tổng quan, KHÔNG thấy bất kỳ con số tiền nào |
+| **Kiểm kho** (warehouse) | chỉ thao tác kho + xem đơn. KHÔNG thấy Tổng quan, KHÔNG thấy tiền                                                         |
 
 > Ẩn tiền là ẩn **triệt để**: đơn giá, thành tiền, tổng cộng, đã thu, còn thiếu, trạng thái thanh toán — trong app lẫn trên **phiếu in**. Phiếu do nhân viên in ra chỉ có mặt hàng + số lượng + tổng số lượng.
 
@@ -167,3 +170,6 @@ noti-server/         worker Node.js gửi push FCM theo vai trò
 > Dọn dữ liệu để bàn giao: `cd noti-server && npm run wipe-orders` (xoá đơn + phiếu thu + reset công nợ, **giữ** sản phẩm/khách/tài khoản). App không còn nút "Xoá toàn bộ dữ liệu" — nút đó chỉ để test lúc dev.
 
 **Chưa làm:** in Bluetooth thật (mới preview hoá đơn), deep-link khi bấm push, iOS APNs.
+
+flutter build web --release
+firebase deploy --only hosting

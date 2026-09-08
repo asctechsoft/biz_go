@@ -111,6 +111,13 @@ class MoreScreen extends StatelessWidget {
               'Sản phẩm & bảng giá',
               '/products',
             ),
+          if (role != null && Perm.manageCarriers(role))
+            _tile(
+              context,
+              Icons.directions_bus_outlined,
+              'Nhà xe',
+              '/carriers',
+            ),
           if (role != null && Perm.warehouseOps(role))
             _tile(
               context,
