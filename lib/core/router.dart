@@ -10,6 +10,7 @@ import '../features/dashboard/notifications_screen.dart';
 import '../features/dashboard/quick_filter_screen.dart';
 import '../features/delivery/delivery_hub_screen.dart';
 import '../features/more/audit_log_screen.dart';
+import '../features/more/carriers_screen.dart';
 import '../features/more/invoice_settings_screen.dart';
 import '../features/more/more_screen.dart';
 import '../features/more/reports_screen.dart';
@@ -126,6 +127,7 @@ GoRouter buildRouter(AuthProvider auth) {
       GoRoute(path: '/reports', builder: (c, s) => const ReportsScreen()),
       GoRoute(path: '/users', builder: (c, s) => const UserManagementScreen()),
       GoRoute(path: '/audit', builder: (c, s) => const AuditLogScreen()),
+      GoRoute(path: '/carriers', builder: (c, s) => const CarriersScreen()),
       GoRoute(
         path: '/invoice-settings',
         builder: (c, s) => const InvoiceSettingsScreen(),

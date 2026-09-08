@@ -7,6 +7,7 @@ import '../core/formatters.dart';
 import '../models/app_notification.dart';
 import '../models/app_user.dart';
 import '../models/audit_log.dart';
+import '../models/carrier.dart';
 import '../models/customer.dart';
 import '../models/order.dart';
 import '../models/payment.dart';
@@ -31,6 +32,8 @@ class Db {
       _db.collection('notifications');
   CollectionReference<Map<String, dynamic>> get _users =>
       _db.collection('users');
+  CollectionReference<Map<String, dynamic>> get _carriers =>
+      _db.collection('carriers');
 
   // ---------- Thông tin cửa hàng in trên phiếu ----------
   DocumentReference<Map<String, dynamic>> get _shopDoc =>
@@ -247,6 +250,32 @@ class Db {
       'items': FieldValue.arrayUnion([u]),
     }, SetOptions(merge: true));
   }
+
+  // ---------- Nhà xe (danh mục) ----------
+  // Sổ tay nhà xe hay dùng: khai một lần ở Cài đặt › Nhà xe rồi chọn lại khi
+  // thêm địa chỉ khách. Chỉ là **gợi ý** — địa chỉ khách và đơn hàng vẫn giữ
+  // bản chép riêng, nên sửa/xoá ở đây không đổi dữ liệu cũ.
+
+  /// Danh mục nhà xe, sắp theo tên. KHÔNG `orderBy('nameLower')` — doc thiếu
+  /// field đó bị Firestore loại thẳng khỏi kết quả; sort trong Dart cho chắc.
+  Stream<List<Carrier>> carriers() => _carriers.snapshots().map((s) {
+    final list = s.docs.map((d) => Carrier.fromMap(d.id, d.data())).toList();
+    list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return list;
+  });
+
+  Future<String> upsertCarrier(Carrier c) async {
+    if (c.id.isEmpty) {
+      final ref = await _carriers.add(c.toMap());
+      return ref.id;
+    }
+    await _carriers.doc(c.id).set(c.toMap());
+    return c.id;
+  }
+
+  /// Xoá nhà xe khỏi danh mục. Địa chỉ khách / đơn cũ đang ghi tên nhà xe này
+  /// KHÔNG bị ảnh hưởng (chuỗi đã chép sang), chỉ mất gợi ý cho lần sau.
+  Future<void> deleteCarrier(String id) => _carriers.doc(id).delete();
 
   // ---------- Customers ----------
   // KHÔNG orderBy('nameLower'): doc khách cũ chưa có field đó bị Firestore
