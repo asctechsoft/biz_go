@@ -1171,6 +1171,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       PaymentStatus.PARTIAL,
       PaymentStatus.PAID,
       PaymentStatus.COD,
+      PaymentStatus.CARRIER,
       PaymentStatus.DEBT,
     ];
     final picked = await showModalBottomSheet<PaymentStatus>(

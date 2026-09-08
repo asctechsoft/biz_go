@@ -13,6 +13,78 @@ class PaymentResult {
   PaymentResult(this.amount, this.method, this.note);
 }
 
+/// Ô chọn **hình thức thu tiền** — bấm vào mở bottom sheet chọn.
+///
+/// KHÔNG dùng `DropdownButtonFormField`: ô này luôn nằm trong một bottom sheet
+/// (sheet Thanh toán, sheet Thu công nợ), mà dropdown trong sheet hay bung
+/// ngược lên / đè lên nội dung (xem CLAUDE.md › Gotchas). Dùng chung ở mọi chỗ
+/// cho chọn hình thức để 3 lựa chọn không bị lệch nhau giữa các màn.
+class PaymentMethodField extends StatelessWidget {
+  final PaymentMethod value;
+  final ValueChanged<PaymentMethod> onChanged;
+  final String label;
+  const PaymentMethodField({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.label = 'Hình thức thu',
+  });
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () async {
+          final picked = await pickPaymentMethod(context, value);
+          if (picked != null) onChanged(picked);
+        },
+        child: InputDecorator(
+          decoration: InputDecoration(labelText: label),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  value.label,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              const Icon(Icons.arrow_drop_down, color: AppColors.textSecondary),
+            ],
+          ),
+        ),
+      );
+}
+
+/// Bottom sheet chọn hình thức thu. Chỉ hiện [paymentMethodOptions] — "Ví điện
+/// tử" là legacy nên không cho chọn mới nữa.
+Future<PaymentMethod?> pickPaymentMethod(
+  BuildContext context,
+  PaymentMethod current,
+) {
+  return showModalBottomSheet<PaymentMethod>(
+    context: context,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SheetHeader('Hình thức thu'),
+          for (final m in paymentMethodOptions)
+            ListTile(
+              title: Text(m.label,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              trailing: current == m
+                  ? const Icon(Icons.check, color: AppColors.primary)
+                  : null,
+              onTap: () => Navigator.pop(ctx, m),
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+}
+
 /// Mockup 6.5 — Thanh toán / thu tiền.
 Future<PaymentResult?> showPaymentSheet(BuildContext context, Order order) {
   final remaining = order.remaining > 0 ? order.remaining : 0;
@@ -64,14 +136,9 @@ Future<PaymentResult?> showPaymentSheet(BuildContext context, Order order) {
                   onChanged: (_) => setSheet(() {}),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<PaymentMethod>(
-                  initialValue: method,
-                  decoration: const InputDecoration(labelText: 'Hình thức thu'),
-                  items: [
-                    for (final m in PaymentMethod.values)
-                      DropdownMenuItem(value: m, child: Text(m.label)),
-                  ],
-                  onChanged: (m) => setSheet(() => method = m!),
+                PaymentMethodField(
+                  value: method,
+                  onChanged: (m) => setSheet(() => method = m),
                 ),
                 const SizedBox(height: 12),
                 TextField(

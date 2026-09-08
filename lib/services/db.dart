@@ -578,6 +578,15 @@ class Db {
         );
   }
 
+  /// Trạng thái thanh toán do **người dùng tự chốt** — `Db` KHÔNG tự suy lại
+  /// từ số tiền đã thu. `REFUNDED` cũng bất động nhưng do `cancelOrder` sinh
+  /// ra nên không nằm ở đây.
+  static const _userSetPayStatus = {
+    PaymentStatus.COD,
+    PaymentStatus.CARRIER,
+    PaymentStatus.DEBT,
+  };
+
   /// Đơn đã đóng hàng nhưng chưa cho đi.
   /// `ASSIGNED`/`LOADING` là tàn dư luồng chuyến xe cũ — vẫn cho xuất phát.
   static const _waitingDepart = {
@@ -623,8 +632,7 @@ class Db {
 
     // Initial payment status from prepaid.
     PaymentStatus ps;
-    if (draft.paymentStatus == PaymentStatus.COD ||
-        draft.paymentStatus == PaymentStatus.DEBT) {
+    if (_userSetPayStatus.contains(draft.paymentStatus)) {
       ps = draft.paymentStatus;
     } else if (draft.prepaid <= 0) {
       ps = PaymentStatus.UNPAID;
@@ -752,11 +760,10 @@ class Db {
       final newOutstanding = total - paid > 0 ? total - paid : 0;
 
       var ps = cur.paymentStatus;
-      // COD / Công nợ / Đã hoàn tiền là trạng thái người dùng tự chốt (hoặc do
-      // hủy đơn) — đừng tự đổi. Còn lại suy ra từ số đã thu so với tổng MỚI.
-      if (ps != PaymentStatus.COD &&
-          ps != PaymentStatus.DEBT &&
-          ps != PaymentStatus.REFUNDED) {
+      // COD / Thu qua nhà xe / Công nợ / Đã hoàn tiền là trạng thái người dùng
+      // tự chốt (hoặc do hủy đơn) — đừng tự đổi. Còn lại suy ra từ số đã thu so
+      // với tổng MỚI.
+      if (!_userSetPayStatus.contains(ps) && ps != PaymentStatus.REFUNDED) {
         ps = paid <= 0
             ? PaymentStatus.UNPAID
             : (paid >= total ? PaymentStatus.PAID : PaymentStatus.PARTIAL);

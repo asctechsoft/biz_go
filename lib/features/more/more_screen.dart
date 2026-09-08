@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
@@ -151,11 +152,7 @@ class MoreScreen extends StatelessWidget {
           if (role != null && Perm.viewAudit(role))
             _tile(context, Icons.history, 'Nhật ký hệ thống', '/audit'),
           const Divider(),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('Phiên bản'),
-            trailing: const Text('1.0.0'),
-          ),
+          const _VersionTile(),
           ListTile(
             leading: const Icon(Icons.logout, color: AppColors.danger),
             title: const Text(
@@ -266,4 +263,34 @@ class MoreScreen extends StatelessWidget {
       onTap: () => context.push(route),
     );
   }
+}
+
+/// Dòng "Phiên bản" — đọc số THẬT của bản build (`pubspec.yaml`) qua
+/// `package_info_plus`, KHÔNG gõ tay.
+///
+/// Trước đây dòng này hardcode '1.0.0' nên tăng `version:` trong pubspec mà app
+/// vẫn hiện số cũ. Giờ chỉ cần `dart run tool/bump_version.dart` trước khi build
+/// bản product là app + phiếu đều hiện đúng số mới.
+///
+/// Hiện dạng `1.0.2 (build 7)`: phần trước là versionName cho người dùng đọc,
+/// `build` là versionCode — Google Play bắt buộc phải TĂNG mỗi lần nộp bản mới.
+class _VersionTile extends StatelessWidget {
+  const _VersionTile();
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<PackageInfo>(
+        future: PackageInfo.fromPlatform(),
+        builder: (context, snap) {
+          final info = snap.data;
+          return ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('Phiên bản'),
+            trailing: Text(
+              info == null
+                  ? '...'
+                  : '${info.version} (build ${info.buildNumber})',
+            ),
+          );
+        },
+      );
 }

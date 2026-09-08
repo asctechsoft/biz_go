@@ -11,6 +11,7 @@ import '../../models/payment.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/db.dart';
 import '../../widgets/common.dart';
+import '../orders/payment_sheet.dart';
 import 'customer_edit_screen.dart';
 
 class CustomerDetailScreen extends StatelessWidget {
@@ -297,14 +298,10 @@ class _DebtTab extends StatelessWidget {
                     onChanged: (_) => setSheet(() {}),
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<PaymentMethod>(
-                    initialValue: method,
-                    decoration: const InputDecoration(labelText: 'Hình thức'),
-                    items: [
-                      for (final m in PaymentMethod.values)
-                        DropdownMenuItem(value: m, child: Text(m.label)),
-                    ],
-                    onChanged: (m) => setSheet(() => method = m!),
+                  PaymentMethodField(
+                    value: method,
+                    label: 'Hình thức',
+                    onChanged: (m) => setSheet(() => method = m),
                   ),
                   const SizedBox(height: 12),
                   TextField(

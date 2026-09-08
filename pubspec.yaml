@@ -60,6 +60,7 @@ dependencies:
   # Đăng nhập sinh trắc học (vân tay) + lưu thông tin đăng nhập an toàn
   local_auth: ^2.3.0
   flutter_secure_storage: ^9.2.4
+  package_info_plus: ^9.0.1
 
 dev_dependencies:
   flutter_test:

@@ -70,15 +70,34 @@ const deliveryStatusFilterValues = [
 ];
 
 // §18.4 Payment Status
-enum PaymentStatus { UNPAID, PARTIAL, PAID, REFUNDED, COD, DEBT }
+// CARRIER = nhà xe thu hộ rồi chuyển tiền lại. Về nghiệp vụ giống COD (chưa
+// thu, thu lúc giao) nhưng người thu là nhà xe — `Db` đối xử y như COD/DEBT:
+// người tạo đơn tự chốt, không tự suy lại.
+enum PaymentStatus { UNPAID, PARTIAL, PAID, REFUNDED, COD, DEBT, CARRIER }
 
-enum PaymentMethod { cash, transfer, ewallet }
+/// Hình thức thu tiền.
+///
+/// `ewallet` (Ví điện tử) là **legacy** — đã bỏ khỏi UI, chỉ giữ lại để đọc
+/// đúng các doc `payments` cũ trong Firestore (xoá khỏi enum là payment cũ rơi
+/// về "Tiền mặt", sai lịch sử thu tiền). Danh sách cho người dùng chọn là
+/// [paymentMethodOptions], KHÔNG phải `PaymentMethod.values`.
+enum PaymentMethod { cash, transfer, carrier, ewallet }
+
+/// Các hình thức còn dùng — dùng cái này ở mọi chỗ cho chọn hình thức thu.
+const paymentMethodOptions = [
+  PaymentMethod.cash,
+  PaymentMethod.transfer,
+  PaymentMethod.carrier,
+];
 
 extension PaymentMethodX on PaymentMethod {
   String get label => switch (this) {
     PaymentMethod.cash => 'Tiền mặt',
     PaymentMethod.transfer => 'Chuyển khoản',
-    PaymentMethod.ewallet => 'Ví điện tử',
+    // Nhà xe thu hộ rồi chuyển lại — hàng gửi qua nhà xe thì tiền cũng về
+    // theo đường đó, xem `order.deliveryCarrierName`.
+    PaymentMethod.carrier => 'Thu qua nhà xe',
+    PaymentMethod.ewallet => 'Ví điện tử', // legacy
   };
 }
 
@@ -144,6 +163,7 @@ StatusUi paymentStatusUi(PaymentStatus s) => switch (s) {
   ),
   PaymentStatus.COD => const StatusUi('Thu khi giao', AppColors.info),
   PaymentStatus.DEBT => const StatusUi('Công nợ', AppColors.danger),
+  PaymentStatus.CARRIER => const StatusUi('Thu qua nhà xe', AppColors.info),
 };
 
 T enumFromName<T extends Enum>(List<T> values, String? name, T fallback) =>

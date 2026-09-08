@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/enums.dart';
 import '../../core/error_text.dart';
 import '../../core/file_share.dart';
 import '../../core/formatters.dart';
@@ -11,6 +12,10 @@ import '../../models/shop_info.dart';
 import '../../services/db.dart';
 import '../../services/invoice_pdf.dart';
 import '../../widgets/common.dart';
+
+/// Tên thương hiệu in ở dòng đầu phiếu — phải khớp `InvoicePdf._brand` để bản
+/// xem trước và bản PDF không lệch nhau.
+const _brand = 'BizGo';
 
 /// Xuất phiếu ra PDF rồi mở hộp chia sẻ để lưu về máy / gửi Zalo.
 ///
@@ -180,18 +185,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        shop.title,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
                       if (shop.phone.isNotEmpty)
                         Text(
-                          'SĐT: ${shop.phone}',
+                          'SĐT Người gửi: ${shop.phone}',
                           style: const TextStyle(fontSize: 14),
                         ),
                     ],
@@ -329,6 +325,10 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     ),
                   ),
                 const SizedBox(height: 6),
+                // NGOẠI LỆ có chủ ý của quy tắc "tiền chỉ Chủ": dòng này hiện
+                // trên MỌI phiếu, kể cả phiếu ẩn giá — nhãn trạng thái không
+                // lộ con số nào. Phải khớp với `InvoicePdf`.
+                _line('Thanh toán:', paymentStatusUi(o.paymentStatus).label),
                 if (showMoney) ...[
                   if (o.shippingFee != 0)
                     _line('Phí giao:', money(o.shippingFee)),
@@ -375,32 +375,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   const SizedBox(height: 4),
                   _line('Ghi chú:', o.deliveryNote),
                 ],
-                const SizedBox(height: 20),
-                const Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Người giao\n(ký, ghi rõ họ tên)',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 13),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        'Người nhận\n(ký, ghi rõ họ tên)',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 13),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                const Center(
-                  child: Text(
-                    'Cảm ơn quý khách!',
-                    style: TextStyle(fontSize: 14, fontStyle: FontStyle.italic),
-                  ),
-                ),
               ],
             ),
           ),
@@ -453,14 +427,4 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
           ],
         ),
       );
-
-  Widget _dashed() => const Padding(
-    padding: EdgeInsets.symmetric(vertical: 4),
-    child: Text(
-      '- - - - - - - - - - - - - - - - - - - - - - - - -',
-      maxLines: 1,
-      overflow: TextOverflow.clip,
-      style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
-    ),
-  );
 }

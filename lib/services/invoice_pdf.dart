@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../core/enums.dart';
 import '../core/file_share.dart';
 import '../core/formatters.dart';
 import '../models/order.dart';
@@ -71,6 +72,10 @@ class InvoicePdf {
           pw.SizedBox(height: 8),
           _items(o, showMoney),
           pw.SizedBox(height: 6),
+          // NGOẠI LỆ có chủ ý của quy tắc "tiền chỉ Chủ": dòng này hiện trên
+          // MỌI phiếu, kể cả phiếu ẩn giá. Người giao / nhà xe cần biết đơn đã
+          // trả hay thu khi giao, mà nhãn trạng thái không lộ con số nào.
+          _kv('Thanh toán:', paymentStatusUi(o.paymentStatus).label),
           if (showMoney) ...[
             if (o.shippingFee != 0) _kv('Phí giao:', money(o.shippingFee)),
             if (o.discount != 0) _kv('Giảm giá:', '- ${money(o.discount)}'),
@@ -88,16 +93,6 @@ class InvoicePdf {
             pw.SizedBox(height: 6),
             _kv('Ghi chú:', o.deliveryNote),
           ],
-          pw.SizedBox(height: 10),
-          pw.SizedBox(height: 24),
-          _signatures(),
-          pw.SizedBox(height: 16),
-          pw.Center(
-            child: pw.Text(
-              'Cảm ơn quý khách!',
-              style: pw.TextStyle(fontSize: 13),
-            ),
-          ),
         ],
       ),
     );
@@ -140,15 +135,9 @@ class InvoicePdf {
           textAlign: pw.TextAlign.center,
           style: pw.TextStyle(fontSize: 17, fontWeight: pw.FontWeight.bold),
         ),
-        pw.SizedBox(height: 2),
-        pw.Text(
-          shop.title,
-          textAlign: pw.TextAlign.center,
-          style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
-        ),
         if (shop.phone.isNotEmpty)
           pw.Text(
-            'SĐT: ${shop.phone}',
+            'SĐT Người gửi: ${shop.phone}',
             textAlign: pw.TextAlign.center,
             style: const pw.TextStyle(fontSize: 13),
           ),
@@ -259,25 +248,6 @@ class InvoicePdf {
         ),
       ],
     ),
-  );
-
-  static pw.Widget _signatures() => pw.Row(
-    children: [
-      pw.Expanded(
-        child: pw.Text(
-          'Người giao\n(ký, ghi rõ họ tên)',
-          textAlign: pw.TextAlign.center,
-          style: const pw.TextStyle(fontSize: 13),
-        ),
-      ),
-      pw.Expanded(
-        child: pw.Text(
-          'Người nhận\n(ký, ghi rõ họ tên)',
-          textAlign: pw.TextAlign.center,
-          style: const pw.TextStyle(fontSize: 13),
-        ),
-      ),
-    ],
   );
 
   static pw.Widget _th(String t, {pw.TextAlign align = pw.TextAlign.left}) =>

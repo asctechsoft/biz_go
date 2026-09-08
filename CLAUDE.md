@@ -33,7 +33,8 @@ App mobile **BizGo** — quản lý bán hàng / giao hàng / công nợ. **Flut
 - `OrderStatus`: NEW · CONFIRMED · PROCESSING · COMPLETED · CANCELLED
 - `WarehouseStatus`: WAITING (nhãn "Chờ đóng hàng") · PACKED. **PREPARING · PREPARED · PACKING là legacy** của luồng "chuẩn bị hàng" đã bỏ — chỉ đọc cho đơn cũ, KHÔNG ghi mới.
 - `DeliveryStatus`: WAITING_ASSIGNMENT (nhãn "Chờ xuất phát") · ON_THE_WAY · DELIVERED · FAILED · RESCHEDULED · RETURNED. **ASSIGNED · LOADING · ARRIVED là legacy** của luồng chuyến xe cũ — chỉ đọc cho đơn cũ, KHÔNG ghi mới. Ô lọc dùng `deliveryStatusFilterValues`.
-- `PaymentStatus`: UNPAID · PARTIAL · PAID · REFUNDED · COD · DEBT
+- `PaymentStatus`: UNPAID · PARTIAL · PAID · REFUNDED · COD · DEBT · **CARRIER** (nhãn "Thu qua nhà xe" — nhà xe thu hộ rồi chuyển lại, nghiệp vụ như COD). COD/CARRIER/DEBT là **người dùng tự chốt**: `Db` không suy lại từ số đã thu — danh sách ở `Db._userSetPayStatus`, thêm trạng thái kiểu này thì thêm vào đó, đừng viết lại điều kiện ở `createOrder`/`editOrder`.
+- `PaymentMethod`: cash (Tiền mặt) · transfer (Chuyển khoản) · carrier (**Thu qua nhà xe**). **`ewallet` (Ví điện tử) là legacy** — giữ trong enum để đọc payment cũ, KHÔNG cho chọn mới. Mọi chỗ cho chọn hình thức phải lặp `paymentMethodOptions`, đừng lặp `PaymentMethod.values`.
 - **`UserRole`: owner (Chủ) · checker (Kiểm hàng) · warehouse (Kiểm kho)** — CHỈ 3 vai trò, KHÔNG còn `shipper`. `roleFromName` fallback về `warehouse` (quyền thấp nhất), nên hồ sơ cũ còn `role: 'shipper'` tự rơi về Kiểm kho.
 
 Enum lưu Firestore bằng `.name`. Nhãn tiếng Việt + màu qua các hàm `*StatusUi()`.
@@ -42,7 +43,7 @@ Enum lưu Firestore bằng `.name`. Nhãn tiếng Việt + màu qua các hàm `*
 
 - **owner:** toàn quyền — là người DUY NHẤT xem màn Tổng quan (`Perm.viewDashboard`) và đối soát giao hàng + thu tiền (`Perm.confirmDelivery`, `Perm.collectPayment`). **checker:** kho/đóng hàng/in phiếu, xem đơn, bấm **Xuất phát** (`Perm.startDelivery`). **warehouse:** chỉ thao tác kho + xem đơn.
 - **Phiếu in mặc định KHÔNG có giá** (`ShopInfo.hidePrices`, lưu ở `meta/shop`, doc cũ thiếu field → `true`). Hai tầng quyết định: `Perm.viewMoney(role)` là khoá cứng (false thì không nút nào mở lại được), rồi mới tới cài đặt cửa hàng — Chủ lật cho RIÊNG lần in bằng nút trên thanh tiêu đề `InvoiceScreen`. Tham số của màn phiếu là `canSeeMoney` (**quyền**), đừng nhầm với `showMoney` của `InvoicePdf`/`downloadInvoicePdf` (**kết quả đã tính**). Thêm nút tải PDF mới ở đâu thì nhớ truyền `showMoney` đúng bằng giá trị đang hiển thị, kẻo xem bản ẩn giá mà tải ra bản đủ giá.
-- **Tiền chỉ owner (`Perm.viewMoney`).** Đơn giá, thành tiền, tổng cộng, đã thu, còn thiếu, trạng thái thanh toán — ẩn hết với checker/warehouse, cả trong app lẫn **trên phiếu in**. KHÔNG có chỗ chặn chung: phải gate ở TỪNG nơi hiện tiền. Hiện đang gate ở `orders_screen` (thẻ đơn + tổng theo ngày + thanh lọc), `order_detail_screen` (dòng hàng, tổng cộng, `_PaymentCard`, chip trạng thái thanh toán), `delivery_hub_screen` (cả 3 tab — checker vào được cả 3, chỉ nút bấm bị chặn, nên phải truyền `showMoney` theo VAI TRÒ chứ đừng suy ra từ "tab này ai thao tác"), `quick_filter_screen` (bỏ ô lọc trạng thái thanh toán), `InvoiceScreen(showMoney:)` và `InvoicePdf.build(showMoney:)`. Thêm chỗ hiện `money()` mới thì nhớ gate.
+- **Tiền chỉ owner (`Perm.viewMoney`).** Đơn giá, thành tiền, tổng cộng, đã thu, còn thiếu, trạng thái thanh toán — ẩn hết với checker/warehouse, cả trong app lẫn **trên phiếu in**. KHÔNG có chỗ chặn chung: phải gate ở TỪNG nơi hiện tiền. Hiện đang gate ở `orders_screen` (thẻ đơn + tổng theo ngày + thanh lọc), `order_detail_screen` (dòng hàng, tổng cộng, `_PaymentCard`, chip trạng thái thanh toán), `delivery_hub_screen` (cả 3 tab — checker vào được cả 3, chỉ nút bấm bị chặn, nên phải truyền `showMoney` theo VAI TRÒ chứ đừng suy ra từ "tab này ai thao tác"), `quick_filter_screen` (bỏ ô lọc trạng thái thanh toán), `InvoiceScreen(showMoney:)` và `InvoicePdf.build(showMoney:)`. **NGOẠI LỆ có chủ ý:** dòng "Thanh toán: <trạng thái>" trên phiếu in nằm NGOÀI khối `showMoney` — mọi vai trò đều thấy, vì người giao/nhà xe cần biết đơn đã trả hay thu khi giao, mà nhãn trạng thái không lộ con số. Trong app thì chip trạng thái thanh toán vẫn bị ẩn như cũ. Thêm chỗ hiện `money()` mới thì nhớ gate.
 - **`/dashboard` chỉ owner.** `Perm.home(role)` = tab đầu tiên, nên checker/warehouse đăng nhập vào thẳng `/orders`. Hộp thông báo `/notifications` trước đây CHỈ mở được từ màn Tổng quan → màn Đơn hàng có thêm chuông (`_NotifButton`) cho vai trò không thấy Tổng quan; bỏ nút đó đi là checker mất chỗ đọc thông báo "Đơn mới".
 - Chặn 3 tầng: `Perm.tabs(role)` (bottom nav) · gate nút trong UI · `Perm.canRoute(role, loc)` (router redirect).
 - **Nhiều owner được, nhưng luôn phải còn ít nhất 1.** Owner tạo tài khoản khác (kể cả owner thứ hai) qua **Quản lý người dùng** (`/users`). Tạo account dùng **FirebaseApp phụ** (`AuthService.createUserAsAdmin`) để owner không bị đăng xuất — KHÔNG tạo user bằng app chính.
@@ -89,7 +90,7 @@ Màn `/delivery` (`DeliveryHubScreen`) 3 tab: **Chờ xuất phát** (`Db.orders
 - **Login fail** thường do Firebase **chưa bật Email/Password** hoặc Firestore rules khóa. `AuthProvider.signIn` in `SIGN-IN ERROR:` ra console. `invalid-credential` với account demo → app tự tạo (mật khẩu `123456`).
 - **Nút cuối trang bị thanh nav Android che.** `Scaffold` CHỈ tự trừ inset đáy khi có `bottomNavigationBar`; màn nào không có mà lại kết bằng nút thì phải tự cộng `MediaQuery.of(context).padding.bottom` vào padding đáy của `ListView`/`SliverToBoxAdapter` (hoặc bọc `SafeArea`). Không có nó thì cuộn hết cỡ vẫn không bấm được nút — đã dính ở chi tiết sản phẩm, chi tiết phân loại, Lọc nhanh, Cài đặt phiếu, màn phiếu.
 - **UI trong ListView:** Row chứa Column dễ crash "unbounded height" — đặt `mainAxisSize: MainAxisSize.min`, tránh `crossAxisAlignment.stretch`.
-- **Dropdown trong bottom sheet** hay bung ngược/đè → dùng `_selectField` + `_pickFromList` (bottom sheet chọn) thay `DropdownButtonFormField`.
+- **Dropdown trong bottom sheet** hay bung ngược/đè → dùng ô bấm mở bottom sheet chọn thay `DropdownButtonFormField`. Mẫu sẵn có: `PaymentMethodField`/`pickPaymentMethod` (`features/orders/payment_sheet.dart`) và `_pickPayStatus` trong màn tạo đơn.
 - **Toast bị modal sheet che** → validate trong sheet bằng banner đỏ inline (`setSheet(() => error = ...)`), không dùng `toast`.
 - **Model dùng trong Dropdown** cần override `==`/`hashCode` theo `id` vì stream tạo instance mới.
 - **`fl_chart`** cần chiều cao bounded (bọc `SizedBox`).
@@ -110,13 +111,29 @@ Màn `/delivery` (`DeliveryHubScreen`) 3 tab: **Chờ xuất phát** (`Db.orders
 flutter analyze                                              # luôn chạy sau khi sửa
 flutter run --flavor dev                                     # debug trên Firebase dev
 flutter run --flavor product                                 # debug trên DB khách hàng (cẩn thận)
+dart run tool/bump_version.dart                              # +1 số build — CHẠY TRƯỚC MỌI BẢN PRODUCT
 flutter build apk --release --flavor product --split-per-abi  # APK phát hành
+flutter build web --release && firebase deploy --only hosting # web (luôn ra bản product)
 flutter build apk --debug --flavor dev --target-platform android-arm64
 dart run flutter_launcher_icons                              # đổi icon từ assets/images/logo_app.png
 cd noti-server && npm start                                  # worker push (đang trỏ project prod)
 ```
 
 > Trên Windows, `flutter analyze` trả exit code ≠ 0 kể cả khi chỉ có lint `info`. Lọc dòng chứa ` error ` / ` warning ` để biết có lỗi thật không.
+
+### Số phiên bản
+
+**Mỗi bản product (APK hoặc web) phải tăng số build trước khi build:**
+
+```bash
+dart run tool/bump_version.dart          # 1.0.0+1 → 1.0.0+2   (chỉ số build)
+dart run tool/bump_version.dart patch    # 1.0.0+1 → 1.0.1+2
+dart run tool/bump_version.dart minor    # 1.0.3+7 → 1.1.0+8
+dart run tool/bump_version.dart major    # 1.4.2+9 → 2.0.0+10
+```
+
+- `version: X.Y.Z+N` trong `pubspec.yaml` là **nguồn duy nhất**: `X.Y.Z` → versionName, `N` → versionCode của APK. Cài đặt › Phiên bản đọc lại đúng số đó qua `package_info_plus` (`_VersionTile` trong `more_screen.dart`) → **đừng gõ số phiên bản ở bất cứ chỗ nào khác**; trước đây dòng đó hardcode `'1.0.0'` nên tăng pubspec mà app vẫn hiện số cũ.
+- Số build (`N`) **luôn +1**, kể cả khi X.Y.Z không đổi — Google Play từ chối bản có versionCode không lớn hơn bản đã nộp, và đó là cách duy nhất phân biệt 2 bản cùng tên phiên bản khi khách báo lỗi.
 
 ## Môi trường dev / product (2 Firebase project)
 
