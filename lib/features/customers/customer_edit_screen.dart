@@ -7,6 +7,7 @@ import '../../models/customer.dart';
 import '../../services/db.dart';
 import '../../services/image_service.dart';
 import '../../widgets/common.dart';
+import '../more/carriers_screen.dart';
 
 class CustomerEditScreen extends StatefulWidget {
   final Customer? customer;
@@ -256,6 +257,21 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
   late bool _default = widget.existing?.isDefault ?? false;
   bool _dirty = false;
 
+  /// Vừa chọn nhà xe từ danh mục → hiện dòng nhắc là số này sửa được.
+  bool _pickedFromDirectory = false;
+
+  /// Chọn nhà xe từ danh mục, điền sẵn tên + SĐT vào 2 ô bên dưới.
+  Future<void> _pickCarrier() async {
+    final pick = await pickCarrier(context, selectedName: _carrier.text);
+    if (pick == null || !mounted) return;
+    setState(() {
+      _carrier.text = pick.carrier?.name ?? '';
+      _carrierPhone.text = pick.carrier?.phone ?? '';
+      _pickedFromDirectory = pick.carrier != null;
+      _dirty = true;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -316,8 +332,31 @@ class _AddressFormScreenState extends State<_AddressFormScreen> {
             child: Text('Nhà xe (nếu gửi hàng qua nhà xe)',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           ),
+          // Chọn từ danh mục (Cài đặt › Nhà xe) → điền sẵn tên + SĐT. Hai ô
+          // dưới vẫn sửa được: nhà xe đổi số cho riêng tuyến này là chuyện
+          // thường, và danh mục chỉ là gợi ý — địa chỉ giữ bản chép riêng.
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: OutlinedButton.icon(
+              onPressed: _pickCarrier,
+              icon: const Icon(Icons.directions_bus_outlined),
+              label: Text(_carrier.text.trim().isEmpty
+                  ? 'Chọn nhà xe từ danh mục'
+                  : 'Đổi nhà xe khác'),
+            ),
+          ),
           _f('Tên nhà xe', _carrier, hint: 'VD: Nhà xe Hoàng Long'),
           _f('SĐT nhà xe', _carrierPhone, keyboard: TextInputType.phone),
+          if (_pickedFromDirectory)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Đã lấy từ danh mục nhà xe. Sửa ở đây chỉ đổi cho địa chỉ '
+                'này, danh mục giữ nguyên.',
+                style:
+                    TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+              ),
+            ),
           _f('Ghi chú', _note),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,

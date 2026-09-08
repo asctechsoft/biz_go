@@ -21,7 +21,9 @@ class InvoicePdf {
 
   static Future<void> _loadFonts() async {
     if (_regular != null && _bold != null) return;
-    _regular = pw.Font.ttf(await rootBundle.load('assets/fonts/Roboto-Regular.ttf'));
+    _regular = pw.Font.ttf(
+      await rootBundle.load('assets/fonts/Roboto-Regular.ttf'),
+    );
     _bold = pw.Font.ttf(await rootBundle.load('assets/fonts/Roboto-Bold.ttf'));
   }
 
@@ -30,8 +32,11 @@ class InvoicePdf {
   /// [showMoney] false → phiếu chỉ có mặt hàng + số lượng: bỏ cột thành tiền,
   /// bỏ khối tổng cộng và ô CẦN THU. Dùng cho người không phải Chủ, đủ để soạn
   /// và giao hàng mà không lộ giá bán.
-  static Future<Uint8List> build(Order o, ShopInfo shop,
-      {bool showMoney = true}) async {
+  static Future<Uint8List> build(
+    Order o,
+    ShopInfo shop, {
+    bool showMoney = true,
+  }) async {
     await _loadFonts();
     final doc = pw.Document(
       theme: pw.ThemeData.withFont(base: _regular!, bold: _bold!),
@@ -67,14 +72,16 @@ class InvoicePdf {
           if (showMoney) ...[
             if (o.shippingFee != 0) _kv('Phí giao:', money(o.shippingFee)),
             if (o.discount != 0) _kv('Giảm giá:', '- ${money(o.discount)}'),
-            _kv('TỔNG CỘNG:', money(o.total), bold: true, size: 12),
+            _kv('TỔNG CỘNG:', money(o.total), bold: true, size: 16),
             if (o.paidAmount != 0) _kv('Đã thanh toán:', money(o.paidAmount)),
             pw.SizedBox(height: 8),
             _due(o),
           ] else
-            _kv('Tổng số lượng:',
-                '${o.items.fold<int>(0, (s, i) => s + i.quantity)}',
-                bold: true),
+            _kv(
+              'Tổng số lượng:',
+              '${o.items.fold<int>(0, (s, i) => s + i.quantity)}',
+              bold: true,
+            ),
           if (o.deliveryNote.isNotEmpty) ...[
             pw.SizedBox(height: 6),
             _kv('Ghi chú:', o.deliveryNote),
@@ -84,8 +91,10 @@ class InvoicePdf {
           _signatures(),
           pw.SizedBox(height: 16),
           pw.Center(
-            child: pw.Text('Cảm ơn quý khách!',
-                style: pw.TextStyle(fontSize: 9)),
+            child: pw.Text(
+              'Cảm ơn quý khách!',
+              style: pw.TextStyle(fontSize: 13),
+            ),
           ),
         ],
       ),
@@ -96,8 +105,11 @@ class InvoicePdf {
   /// Dựng PDF rồi lưu/chia sẻ: Android ghi file tạm + mở hộp chia sẻ (Zalo/
   /// Drive/lưu máy), web tải file về qua trình duyệt. Tách nền tảng ở
   /// [saveAndShareBytes] để file này không phải đụng `dart:io`.
-  static Future<void> export(Order o, ShopInfo shop,
-      {bool showMoney = true}) async {
+  static Future<void> export(
+    Order o,
+    ShopInfo shop, {
+    bool showMoney = true,
+  }) async {
     final bytes = await build(o, shop, showMoney: showMoney);
     await saveAndShareBytes(
       bytes,
@@ -117,164 +129,208 @@ class InvoicePdf {
   /// nằm sát mép trái, thành ra nhìn như căn trái. Ép rộng hết trang rồi cho
   /// mỗi dòng `textAlign: center` mới ra giữa thật.
   static pw.Widget _header(Order o, ShopInfo shop) => pw.SizedBox(
-        width: double.infinity,
-        child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: [
-          if (shop.phone.isNotEmpty)
-            pw.Text('SĐT: ${shop.phone}',
-                textAlign: pw.TextAlign.center,
-                style: const pw.TextStyle(fontSize: 9)),
-          pw.SizedBox(height: 10),
-          pw.Text('PHIẾU GIAO HÀNG',
-              textAlign: pw.TextAlign.center,
-              style: pw.TextStyle(
-                  fontSize: 15,
-                  fontWeight: pw.FontWeight.bold,
-                  letterSpacing: 1)),
-          if (o.packageCode != null) ...[
-            pw.SizedBox(height: 5),
-            pw.Text(
-                'Mã kiện hàng: ${o.packageCode}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
-                textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(
-                    fontSize: 12, fontWeight: pw.FontWeight.bold)),
-          ]
-          // Đơn đóng trước khi đổi sang mã kiện tự động.
-          else if (o.packageCount != null) ...[
-            pw.SizedBox(height: 5),
-            pw.Text(
-                'Số kiện: ${o.packageCount}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
-                textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(
-                    fontSize: 12, fontWeight: pw.FontWeight.bold)),
-          ],
-        ],
+    width: double.infinity,
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        pw.Text(
+          _brand,
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(fontSize: 17, fontWeight: pw.FontWeight.bold),
         ),
-      );
+        pw.SizedBox(height: 2),
+        pw.Text(
+          shop.title,
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
+        ),
+        if (shop.phone.isNotEmpty)
+          pw.Text(
+            'SĐT: ${shop.phone}',
+            textAlign: pw.TextAlign.center,
+            style: const pw.TextStyle(fontSize: 13),
+          ),
+        pw.SizedBox(height: 10),
+        pw.Text(
+          'PHIẾU GIAO HÀNG',
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(
+            fontSize: 19,
+            fontWeight: pw.FontWeight.bold,
+            letterSpacing: 1,
+          ),
+        ),
+        if (o.packageCode != null) ...[
+          pw.SizedBox(height: 5),
+          pw.Text(
+            'Mã kiện hàng: ${o.packageCode}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+          ),
+        ]
+        // Đơn đóng trước khi đổi sang mã kiện tự động.
+        else if (o.packageCount != null) ...[
+          pw.SizedBox(height: 5),
+          pw.Text(
+            'Số kiện: ${o.packageCount}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+          ),
+        ],
+      ],
+    ),
+  );
 
   static pw.Widget _items(Order o, bool showMoney) => pw.Column(
+    children: [
+      pw.Row(
         children: [
-          pw.Row(
+          pw.Expanded(flex: 5, child: _th('Mặt hàng')),
+          pw.Expanded(flex: 2, child: _th('SL', align: pw.TextAlign.center)),
+          if (showMoney)
+            pw.Expanded(
+              flex: 4,
+              child: _th('Thành tiền', align: pw.TextAlign.right),
+            ),
+        ],
+      ),
+      pw.SizedBox(height: 4),
+      for (final it in o.items)
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 2),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.Expanded(flex: 5, child: _th('Mặt hàng')),
               pw.Expanded(
-                  flex: 2, child: _th('SL', align: pw.TextAlign.center)),
+                flex: 5,
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    // Phân loại làm tên mặt hàng — xem ghi chú ở
+                    // `InvoiceScreen`, phải khớp với bản xem trước.
+                    pw.Text(
+                      it.variantLabel,
+                      style: pw.TextStyle(
+                        fontSize: 14,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.Text(
+                      showMoney
+                          ? '${it.packagingName} · ${money(it.unitPrice)}'
+                          : it.packagingName,
+                      style: const pw.TextStyle(
+                        fontSize: 12,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.Expanded(
+                flex: 2,
+                child: pw.Text(
+                  '${it.quantity}',
+                  textAlign: pw.TextAlign.center,
+                  style: const pw.TextStyle(fontSize: 14),
+                ),
+              ),
               if (showMoney)
                 pw.Expanded(
-                    flex: 4,
-                    child: _th('Thành tiền', align: pw.TextAlign.right)),
+                  flex: 4,
+                  child: pw.Text(
+                    money(it.lineTotal),
+                    textAlign: pw.TextAlign.right,
+                    style: pw.TextStyle(
+                      fontSize: 14,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
             ],
           ),
-          pw.SizedBox(height: 4),
-          for (final it in o.items)
-            pw.Padding(
-              padding: const pw.EdgeInsets.symmetric(vertical: 2),
-              child: pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Expanded(
-                    flex: 5,
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        // Phân loại làm tên mặt hàng — xem ghi chú ở
-                        // `InvoiceScreen`, phải khớp với bản xem trước.
-                        pw.Text(it.variantLabel,
-                            style: pw.TextStyle(
-                                fontSize: 10,
-                                fontWeight: pw.FontWeight.bold)),
-                        pw.Text(
-                            showMoney
-                                ? '${it.packagingName} · ${money(it.unitPrice)}'
-                                : it.packagingName,
-                            style: const pw.TextStyle(
-                                fontSize: 8, color: PdfColors.grey700)),
-                      ],
-                    ),
-                  ),
-                  pw.Expanded(
-                    flex: 2,
-                    child: pw.Text('${it.quantity}',
-                        textAlign: pw.TextAlign.center,
-                        style: const pw.TextStyle(fontSize: 10)),
-                  ),
-                  if (showMoney)
-                    pw.Expanded(
-                      flex: 4,
-                      child: pw.Text(money(it.lineTotal),
-                          textAlign: pw.TextAlign.right,
-                          style: pw.TextStyle(
-                              fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                    ),
-                ],
-              ),
-            ),
-        ],
-      );
+        ),
+    ],
+  );
 
   static pw.Widget _due(Order o) => pw.Container(
-        width: double.infinity,
-        padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-        color: PdfColors.orange50,
-        child: pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            pw.Text('CẦN THU:',
-                style: pw.TextStyle(
-                    fontSize: 12, fontWeight: pw.FontWeight.bold)),
-            pw.Text(money(o.remaining > 0 ? o.remaining : 0),
-                style: pw.TextStyle(
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColors.red700)),
-          ],
+    width: double.infinity,
+    padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+    color: PdfColors.orange50,
+    child: pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(
+          'CẦN THU:',
+          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
         ),
-      );
+        pw.Text(
+          money(o.remaining > 0 ? o.remaining : 0),
+          style: pw.TextStyle(
+            fontSize: 18,
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColors.red700,
+          ),
+        ),
+      ],
+    ),
+  );
 
   static pw.Widget _signatures() => pw.Row(
-        children: [
-          pw.Expanded(
-            child: pw.Text('Người giao\n(ký, ghi rõ họ tên)',
-                textAlign: pw.TextAlign.center,
-                style: const pw.TextStyle(fontSize: 9)),
-          ),
-          pw.Expanded(
-            child: pw.Text('Người nhận\n(ký, ghi rõ họ tên)',
-                textAlign: pw.TextAlign.center,
-                style: const pw.TextStyle(fontSize: 9)),
-          ),
-        ],
-      );
+    children: [
+      pw.Expanded(
+        child: pw.Text(
+          'Người giao\n(ký, ghi rõ họ tên)',
+          textAlign: pw.TextAlign.center,
+          style: const pw.TextStyle(fontSize: 13),
+        ),
+      ),
+      pw.Expanded(
+        child: pw.Text(
+          'Người nhận\n(ký, ghi rõ họ tên)',
+          textAlign: pw.TextAlign.center,
+          style: const pw.TextStyle(fontSize: 13),
+        ),
+      ),
+    ],
+  );
 
   static pw.Widget _th(String t, {pw.TextAlign align = pw.TextAlign.left}) =>
-      pw.Text(t,
-          textAlign: align,
-          style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold));
-
-  static pw.Widget _kv(String k, String v,
-          {bool bold = false, double size = 10}) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
-        child: pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text(k,
-                style: pw.TextStyle(
-                    fontSize: size,
-                    fontWeight:
-                        bold ? pw.FontWeight.bold : pw.FontWeight.normal)),
-            pw.SizedBox(width: 8),
-            pw.Expanded(
-              child: pw.Text(v,
-                  textAlign: pw.TextAlign.right,
-                  style: pw.TextStyle(
-                      fontSize: size,
-                      fontWeight:
-                          bold ? pw.FontWeight.bold : pw.FontWeight.normal)),
-            ),
-          ],
-        ),
+      pw.Text(
+        t,
+        textAlign: align,
+        style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
       );
 
+  static pw.Widget _kv(
+    String k,
+    String v, {
+    bool bold = false,
+    double size = 14,
+  }) => pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
+    child: pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          k,
+          style: pw.TextStyle(
+            fontSize: size,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          ),
+        ),
+        pw.SizedBox(width: 8),
+        pw.Expanded(
+          child: pw.Text(
+            v,
+            textAlign: pw.TextAlign.right,
+            style: pw.TextStyle(
+              fontSize: size,
+              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }

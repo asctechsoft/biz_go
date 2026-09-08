@@ -22,6 +22,10 @@ class Perm {
   static bool editInvoiceSettings(UserRole r) =>
       r == UserRole.owner || r == UserRole.checker;
   static bool manageCustomers(UserRole r) => r == UserRole.owner;
+
+  /// Danh mục nhà xe (Cài đặt › Nhà xe). Chỉ Chủ — cùng nhóm với danh mục
+  /// khách hàng / sản phẩm.
+  static bool manageCarriers(UserRole r) => r == UserRole.owner;
   // Báo cáo doanh thu — Chủ + Kiểm hàng (kiêm kế toán). Chỉ đọc số liệu.
   static bool viewReports(UserRole r) =>
       r == UserRole.owner || r == UserRole.checker;

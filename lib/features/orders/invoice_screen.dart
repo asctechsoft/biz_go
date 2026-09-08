@@ -18,16 +18,25 @@ import '../../widgets/common.dart';
 /// phiếu lên trước.
 /// [showMoney] false → phiếu chỉ có mặt hàng + số lượng, không cột thành
 /// tiền / tổng cộng / cần thu (phiếu cho kho soạn hàng).
-Future<void> downloadInvoicePdf(BuildContext context, Order order, ShopInfo shop,
-    {bool showMoney = true}) async {
+Future<void> downloadInvoicePdf(
+  BuildContext context,
+  Order order,
+  ShopInfo shop, {
+  bool showMoney = true,
+}) async {
   toast(context, 'Đang tạo PDF...');
   try {
     await InvoicePdf.export(order, shop, showMoney: showMoney);
   } catch (e) {
     debugPrint('EXPORT-PDF ERROR: $e');
     if (context.mounted) {
-      toast(context,
-          friendlyError(e, fallback: 'Tạo PDF không thành công. Thử lại giúp tôi.'));
+      toast(
+        context,
+        friendlyError(
+          e,
+          fallback: 'Tạo PDF không thành công. Thử lại giúp tôi.',
+        ),
+      );
     }
   }
 }
@@ -78,8 +87,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     final o = widget.order;
     final copies = widget.copies;
     // Không có quyền xem tiền thì mọi thứ bên dưới vô nghĩa — luôn false.
-    final showMoney =
-        widget.canSeeMoney && (_override ?? !shop.hidePrices);
+    final showMoney = widget.canSeeMoney && (_override ?? !shop.hidePrices);
     return Scaffold(
       backgroundColor: const Color(0xFFECECEC),
       appBar: AppBar(
@@ -88,9 +96,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
           // Lật giá cho riêng lần in này. Chỉ hiện với người được xem tiền.
           if (widget.canSeeMoney)
             IconButton(
-              icon: Icon(showMoney
-                  ? Icons.attach_money
-                  : Icons.money_off_csred_outlined),
+              icon: Icon(
+                showMoney ? Icons.attach_money : Icons.money_off_csred_outlined,
+              ),
               tooltip: showMoney ? 'Đang in kèm giá' : 'Đang in không giá',
               onPressed: () => setState(() => _override = !showMoney),
             ),
@@ -110,12 +118,18 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             onPressed: () async {
               if (kIsWeb) {
                 try {
-                  final bytes =
-                      await InvoicePdf.build(o, shop, showMoney: showMoney);
+                  final bytes = await InvoicePdf.build(
+                    o,
+                    shop,
+                    showMoney: showMoney,
+                  );
                   await printPdfBytes(bytes, docName: 'Phieu_${o.code}');
                 } catch (e) {
                   if (context.mounted) {
-                    toast(context, friendlyError(e, fallback: 'In không thành công.'));
+                    toast(
+                      context,
+                      friendlyError(e, fallback: 'In không thành công.'),
+                    );
                   }
                 }
               } else {
@@ -158,10 +172,27 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 Center(
                   child: Column(
                     children: [
+                      const Text(
+                        _brand,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        shop.title,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                       if (shop.phone.isNotEmpty)
                         Text(
                           'SĐT: ${shop.phone}',
-                          style: const TextStyle(fontSize: 12),
+                          style: const TextStyle(fontSize: 14),
                         ),
                     ],
                   ),
@@ -171,7 +202,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   child: Text(
                     'PHIẾU GIAO HÀNG',
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 20,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 1,
                     ),
@@ -185,7 +216,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       'Mã kiện hàng: ${o.packageCode}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w600,
                         letterSpacing: .5,
                       ),
@@ -200,7 +231,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       'Số kiện: ${o.packageCount}${o.weightKg != null ? ' - ${fmtWeight(o.weightKg, o.weightUnit)}' : ''}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -239,7 +270,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         'Mặt hàng',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          fontSize: 12,
+                          fontSize: 14,
                         ),
                       ),
                     ),
@@ -250,7 +281,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          fontSize: 12,
+                          fontSize: 14,
                         ),
                       ),
                     ),
@@ -262,7 +293,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                           textAlign: TextAlign.right,
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                            fontSize: 14,
                           ),
                         ),
                       ),
@@ -287,7 +318,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                               Text(
                                 it.variantLabel,
                                 style: const TextStyle(
-                                  fontSize: 13,
+                                  fontSize: 15,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -296,7 +327,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                     ? '${it.packagingName} · ${money(it.unitPrice)}'
                                     : it.packagingName,
                                 style: const TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 13,
                                   color: AppColors.textSecondary,
                                 ),
                               ),
@@ -308,7 +339,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                           child: Text(
                             '${it.quantity}',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 13),
+                            style: const TextStyle(fontSize: 15),
                           ),
                         ),
                         if (showMoney)
@@ -318,7 +349,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                               money(it.lineTotal),
                               textAlign: TextAlign.right,
                               style: const TextStyle(
-                                fontSize: 13,
+                                fontSize: 15,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -348,14 +379,14 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         const Text(
                           'CẦN THU:',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 18,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                         Text(
                           money(o.remaining > 0 ? o.remaining : 0),
                           style: const TextStyle(
-                            fontSize: 18,
+                            fontSize: 20,
                             fontWeight: FontWeight.w900,
                             color: AppColors.danger,
                           ),
@@ -364,9 +395,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     ),
                   ),
                 ] else
-                  _line('Tổng số lượng:',
-                      '${o.items.fold<int>(0, (s, i) => s + i.quantity)}',
-                      bold: true),
+                  _line(
+                    'Tổng số lượng:',
+                    '${o.items.fold<int>(0, (s, i) => s + i.quantity)}',
+                    bold: true,
+                  ),
                 if (o.deliveryNote.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   _line('Ghi chú:', o.deliveryNote),
@@ -378,14 +411,14 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       child: Text(
                         'Người giao\n(ký, ghi rõ họ tên)',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11),
+                        style: TextStyle(fontSize: 13),
                       ),
                     ),
                     Expanded(
                       child: Text(
                         'Người nhận\n(ký, ghi rõ họ tên)',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11),
+                        style: TextStyle(fontSize: 13),
                       ),
                     ),
                   ],
@@ -394,7 +427,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 const Center(
                   child: Text(
                     'Cảm ơn quý khách!',
-                    style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                    style: TextStyle(fontSize: 14, fontStyle: FontStyle.italic),
                   ),
                 ),
               ],
@@ -431,7 +464,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             Text(
               k,
               style: TextStyle(
-                fontSize: big ? 15 : 13,
+                fontSize: big ? 17 : 15,
                 fontWeight: bold ? FontWeight.w800 : FontWeight.w400,
               ),
             ),
@@ -441,7 +474,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 v,
                 textAlign: TextAlign.right,
                 style: TextStyle(
-                  fontSize: big ? 15 : 13,
+                  fontSize: big ? 17 : 15,
                   fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
                 ),
               ),
@@ -450,4 +483,13 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         ),
       );
 
+  Widget _dashed() => const Padding(
+    padding: EdgeInsets.symmetric(vertical: 4),
+    child: Text(
+      '- - - - - - - - - - - - - - - - - - - - - - - - -',
+      maxLines: 1,
+      overflow: TextOverflow.clip,
+      style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+    ),
+  );
 }

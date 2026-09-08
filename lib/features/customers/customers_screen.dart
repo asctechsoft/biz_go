@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
@@ -20,6 +22,21 @@ class CustomersScreen extends StatefulWidget {
 class _CustomersScreenState extends State<CustomersScreen> {
   String _q = '';
 
+  /// Stream giữ trong State, KHÔNG gọi `db.customers()` thẳng trong `build`.
+  ///
+  /// `db.customers()` tạo listener MỚI mỗi lần gọi. Đặt trong `build` thì mỗi
+  /// lần gõ ô tìm kiếm (hay bất cứ rebuild nào) là StreamBuilder huỷ listener
+  /// đang chờ rồi nghe lại từ đầu → về `hasData == false` → nhảy lại spinner.
+  /// Máy mới cài chưa có cache Firestore, lần nghe đầu phải tải cả collection;
+  /// cứ bị restart giữa đường là **quay mãi không xong**.
+  Stream<List<Customer>>? _stream;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _stream ??= context.read<Db>().customers();
+  }
+
   @override
   Widget build(BuildContext context) {
     final db = context.read<Db>();
@@ -39,7 +56,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
           ),
           Expanded(
             child: StreamBuilder<List<Customer>>(
-              stream: db.customers(),
+              stream: _stream,
               builder: (context, snap) {
                 if (snap.hasError) {
                   debugPrint('CUSTOMERS STREAM ERROR: ${snap.error}');
@@ -56,7 +73,15 @@ class _CustomersScreenState extends State<CustomersScreen> {
                   );
                 }
                 if (!snap.hasData) {
-                  return const Center(child: CircularProgressIndicator());
+                  // Không để spinner quay vô tận: chờ quá lâu thì nói thật là
+                  // đang không tải được + cho nghe lại. Firestore listener bị
+                  // kẹt (mạng chặn, đồng hồ máy sai, sóng yếu lúc tải lần đầu)
+                  // KHÔNG bao giờ ném lỗi, nên `hasError` ở trên không bắt.
+                  return _SlowLoading(
+                    onRetry: () => setState(
+                      () => _stream = context.read<Db>().customers(),
+                    ),
+                  );
                 }
                 final items = snap.data!
                     .where((c) =>
@@ -69,7 +94,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                   child: ListView.separated(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, i) {
                       final c = items[i];
                       final tile = ListTile(
@@ -194,5 +219,74 @@ class _CustomersScreenState extends State<CustomersScreen> {
         );
       }
     }
+  }
+}
+
+/// Spinner "biết nói": quay bình thường lúc đầu, chờ quá [_patience] thì báo
+/// là đang không tải được kèm nút Thử lại.
+///
+/// Cần thiết vì Firestore listener kẹt (mạng bị chặn, đồng hồ máy sai làm TLS
+/// fail, sóng yếu lúc tải lần đầu khi máy mới cài chưa có cache) sẽ **im lặng
+/// chờ mãi** — không có snapshot, cũng không có lỗi để `hasError` bắt.
+class _SlowLoading extends StatefulWidget {
+  final VoidCallback onRetry;
+  const _SlowLoading({required this.onRetry});
+
+  @override
+  State<_SlowLoading> createState() => _SlowLoadingState();
+}
+
+class _SlowLoadingState extends State<_SlowLoading> {
+  static const _patience = Duration(seconds: 10);
+  Timer? _timer;
+  bool _slow = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(_patience, () {
+      debugPrint('CUSTOMERS: chưa có snapshot sau ${_patience.inSeconds}s '
+          '— listener Firestore đang kẹt (mạng/đồng hồ máy/cache trống).');
+      if (mounted) setState(() => _slow = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_slow) return const Center(child: CircularProgressIndicator());
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_outlined,
+                size: 48, color: AppColors.textSecondary),
+            const SizedBox(height: 12),
+            const Text(
+              'Chưa tải được danh sách khách hàng.\n'
+              'Kiểm tra mạng của máy rồi thử lại.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: () {
+                setState(() => _slow = false);
+                widget.onRetry();
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('Thử lại'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
