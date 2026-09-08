@@ -57,3 +57,6 @@ app.*.map.json
 android/key.properties
 # Ảnh/asset tạm nếu có
 *.log
+
+# Firebase deploy cache (tự sinh, không track)
+.firebase/

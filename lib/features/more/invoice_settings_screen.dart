@@ -19,8 +19,11 @@ class InvoiceSettingsScreen extends StatefulWidget {
 }
 
 class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
-  final _title = TextEditingController();
   final _phone = TextEditingController();
+
+  /// Tiêu đề cũ — không in trên phiếu nữa nên không hiện ô sửa, chỉ giữ để
+  /// resave, tránh `saveShopInfo` ghi đè mất giá trị đang lưu.
+  String _title = ShopInfo.defaultTitle;
 
   bool _loading = true;
   bool _saving = false;
@@ -47,7 +50,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
     final owner = await db.ownerPhone();
     if (!mounted) return;
     setState(() {
-      _title.text = shop.title;
+      _title = shop.title;
       _phone.text = shop.phone;
       _hidePrices = shop.hidePrices;
       _ownerPhone = owner;
@@ -57,21 +60,15 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
 
   @override
   void dispose() {
-    _title.dispose();
     _phone.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    final title = _title.text.trim();
-    if (title.isEmpty) {
-      toast(context, 'Nhập tiêu đề phiếu.');
-      return;
-    }
     setState(() => _saving = true);
     try {
       await context.read<Db>().saveShopInfo(ShopInfo(
-            title: title,
+            title: _title,
             phone: _phone.text.trim(),
             hidePrices: _hidePrices,
           ));
@@ -111,14 +108,6 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
                       const Text('Thông tin in trên phiếu',
                           style: TextStyle(
                               fontSize: 16, fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 16),
-                      _label('Tiêu đề phiếu'),
-                      TextField(
-                        controller: _title,
-                        textCapitalization: TextCapitalization.words,
-                        decoration: const InputDecoration(
-                            hintText: 'Ví dụ: Cùi Bưởi Minh Thư'),
-                      ),
                       const SizedBox(height: 16),
                       _label('Số điện thoại'),
                       TextField(

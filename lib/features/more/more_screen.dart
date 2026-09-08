@@ -141,7 +141,7 @@ class MoreScreen extends StatelessWidget {
             ),
           if (role != null && Perm.viewReports(role))
             _tile(context, Icons.bar_chart, 'Báo cáo', '/reports'),
-          if (role != null && Perm.owner(role))
+          if (role != null && Perm.editInvoiceSettings(role))
             _tile(
               context,
               Icons.receipt_long_outlined,

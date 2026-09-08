@@ -12,26 +12,31 @@ import '../../services/db.dart';
 import '../../services/invoice_pdf.dart';
 import '../../widgets/common.dart';
 
-/// Tên app in ở dòng đầu phiếu. Không sửa được trong Cài đặt — phần sửa được
-/// (tiêu đề cửa hàng + SĐT) nằm ở `meta/shop`, xem [ShopInfo].
-const _brand = 'BizGo';
-
 /// Xuất phiếu ra PDF rồi mở hộp chia sẻ để lưu về máy / gửi Zalo.
 ///
 /// Tách khỏi [InvoiceScreen] để màn chi tiết đơn gọi thẳng được, không phải mở
 /// phiếu lên trước.
 /// [showMoney] false → phiếu chỉ có mặt hàng + số lượng, không cột thành
 /// tiền / tổng cộng / cần thu (phiếu cho kho soạn hàng).
-Future<void> downloadInvoicePdf(BuildContext context, Order order, ShopInfo shop,
-    {bool showMoney = true}) async {
+Future<void> downloadInvoicePdf(
+  BuildContext context,
+  Order order,
+  ShopInfo shop, {
+  bool showMoney = true,
+}) async {
   toast(context, 'Đang tạo PDF...');
   try {
     await InvoicePdf.export(order, shop, showMoney: showMoney);
   } catch (e) {
     debugPrint('EXPORT-PDF ERROR: $e');
     if (context.mounted) {
-      toast(context,
-          friendlyError(e, fallback: 'Tạo PDF không thành công. Thử lại giúp tôi.'));
+      toast(
+        context,
+        friendlyError(
+          e,
+          fallback: 'Tạo PDF không thành công. Thử lại giúp tôi.',
+        ),
+      );
     }
   }
 }
@@ -82,8 +87,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     final o = widget.order;
     final copies = widget.copies;
     // Không có quyền xem tiền thì mọi thứ bên dưới vô nghĩa — luôn false.
-    final showMoney =
-        widget.canSeeMoney && (_override ?? !shop.hidePrices);
+    final showMoney = widget.canSeeMoney && (_override ?? !shop.hidePrices);
     return Scaffold(
       backgroundColor: const Color(0xFFECECEC),
       appBar: AppBar(
@@ -92,9 +96,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
           // Lật giá cho riêng lần in này. Chỉ hiện với người được xem tiền.
           if (widget.canSeeMoney)
             IconButton(
-              icon: Icon(showMoney
-                  ? Icons.attach_money
-                  : Icons.money_off_csred_outlined),
+              icon: Icon(
+                showMoney ? Icons.attach_money : Icons.money_off_csred_outlined,
+              ),
               tooltip: showMoney ? 'Đang in kèm giá' : 'Đang in không giá',
               onPressed: () => setState(() => _override = !showMoney),
             ),
@@ -114,12 +118,18 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             onPressed: () async {
               if (kIsWeb) {
                 try {
-                  final bytes =
-                      await InvoicePdf.build(o, shop, showMoney: showMoney);
+                  final bytes = await InvoicePdf.build(
+                    o,
+                    shop,
+                    showMoney: showMoney,
+                  );
                   await printPdfBytes(bytes, docName: 'Phieu_${o.code}');
                 } catch (e) {
                   if (context.mounted) {
-                    toast(context, friendlyError(e, fallback: 'In không thành công.'));
+                    toast(
+                      context,
+                      friendlyError(e, fallback: 'In không thành công.'),
+                    );
                   }
                 }
               } else {
@@ -199,7 +209,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                _dashed(),
                 // Mã đơn + ngày
                 _line('Số phiếu:', o.code, bold: true),
                 _line('Ngày:', fmtDateTime(o.createdAt)),
@@ -223,7 +232,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 if (o.deliveryAddressNote.isNotEmpty)
                   _line('Lưu ý địa chỉ:', o.deliveryAddressNote),
                 const SizedBox(height: 8),
-                _dashed(),
                 // Bảng sản phẩm — bỏ `const` vì cột "Thành tiền" có điều kiện.
                 Row(
                   children: [
@@ -321,9 +329,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     ),
                   ),
                 const SizedBox(height: 6),
-                _dashed(),
                 if (showMoney) ...[
-                  _line('Tạm tính:', money(o.subtotal)),
                   if (o.shippingFee != 0)
                     _line('Phí giao:', money(o.shippingFee)),
                   if (o.discount != 0)
@@ -360,15 +366,15 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     ),
                   ),
                 ] else
-                  _line('Tổng số lượng:',
-                      '${o.items.fold<int>(0, (s, i) => s + i.quantity)}',
-                      bold: true),
+                  _line(
+                    'Tổng số lượng:',
+                    '${o.items.fold<int>(0, (s, i) => s + i.quantity)}',
+                    bold: true,
+                  ),
                 if (o.deliveryNote.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   _line('Ghi chú:', o.deliveryNote),
                 ],
-                const SizedBox(height: 10),
-                _dashed(),
                 const SizedBox(height: 20),
                 const Row(
                   children: [

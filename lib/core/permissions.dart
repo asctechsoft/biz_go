@@ -16,6 +16,11 @@ class Perm {
   /// Xoá hẳn đơn tạo nhầm. Chỉ Chủ. Điều kiện đơn còn xoá được: `Db.canDelete`.
   static bool deleteOrder(UserRole r) => r == UserRole.owner;
   static bool editCatalog(UserRole r) => r == UserRole.owner; // sản phẩm/giá
+
+  /// Sửa Cài đặt phiếu (tiêu đề/SĐT in trên phiếu + mặc định ẩn giá). Chủ +
+  /// Kiểm hàng. Kiểm hàng có [viewMoney] nên chỉnh được cả toggle giá.
+  static bool editInvoiceSettings(UserRole r) =>
+      r == UserRole.owner || r == UserRole.checker;
   static bool manageCustomers(UserRole r) => r == UserRole.owner;
 
   /// Danh mục nhà xe (Cài đặt › Nhà xe). Chỉ Chủ — cùng nhóm với danh mục
@@ -98,6 +103,7 @@ class Perm {
           p('/delivery') ||
           p('/warehouse') ||
           p('/more') ||
+          p('/invoice-settings') ||
           p('/notifications') ||
           p('/filter');
     }
