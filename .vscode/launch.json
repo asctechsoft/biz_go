@@ -2,28 +2,52 @@
     // Use IntelliSense to learn about possible attributes.
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    //
+    // `--flavor` là thứ DUY NHẤT quyết định app nói chuyện với Firebase nào:
+    // Gradle nhúng google-services.json theo flavor, còn tầng Dart đọc
+    // `appFlavor` (lib/core/firebase_env.dart) nên hai tầng không thể lệch nhau.
+    //
+    //   dev     → project dev-asc     (app "BizGo Dev", id dev.asctechsoft)
+    //   product → project bizgo-877df (app "BizGo", id com.asc.bizgo) = DB KHÁCH HÀNG
+    //
+    // Hai id khác nhau nên cài song song trên cùng máy được, không đè app nào.
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "App_BizGo (debug)",
+            // Chạy hằng ngày: hot reload, đâm vào Firebase dev, xoá dữ liệu thoải mái.
+            "name": "Dev Debug",
             "request": "launch",
             "type": "dart",
             "program": "lib/main.dart",
-            "flutterMode": "debug"
+            "flutterMode": "debug",
+            "args": [
+                "--flavor",
+                "dev"
+            ]
         },
         {
-            "name": "App_BizGo (profile mode)",
+            // CẨN THẬN: debug nhưng chạy trên dữ liệu thật của khách hàng.
+            "name": "Product Debug",
             "request": "launch",
             "type": "dart",
             "program": "lib/main.dart",
-            "flutterMode": "profile"
+            "flutterMode": "debug",
+            "args": [
+                "--flavor",
+                "product"
+            ]
         },
         {
-            "name": "App_BizGo (release mode)",
+            // Bản như giao cho khách: đã tối ưu, không hot reload, dữ liệu thật.
+            "name": "Product Release",
             "request": "launch",
             "type": "dart",
             "program": "lib/main.dart",
-            "flutterMode": "release"
+            "flutterMode": "release",
+            "args": [
+                "--flavor",
+                "product"
+            ]
         }
     ]
 }

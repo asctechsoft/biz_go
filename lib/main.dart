@@ -7,9 +7,9 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 
+import 'core/firebase_env.dart';
 import 'core/router.dart';
 import 'core/theme.dart';
-import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
 import 'services/db.dart';
 import 'services/image_service.dart';
@@ -25,7 +25,7 @@ void main() async {
       systemNavigationBarDividerColor: Colors.white,
     ),
   );
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(options: firebaseOptions);
   await initializeDateFormatting('vi_VN');
   runApp(const BizGoApp());
 }

@@ -101,15 +101,37 @@ Màn `/delivery` (`DeliveryHubScreen`) 3 tab: **Chờ xuất phát** (`Db.orders
 
 ## Lệnh hay dùng
 
+`--flavor` là **bắt buộc** cho mọi lệnh chạy/build Android (xem mục Môi trường dev / product).
+
 ```bash
-flutter analyze                              # luôn chạy sau khi sửa
-flutter run                                  # debug
-flutter build apk --release --split-per-abi  # APK phát hành
-dart run flutter_launcher_icons              # đổi icon từ assets/images/logo_app.png
-cd noti-server && npm start                  # worker push
+flutter analyze                                              # luôn chạy sau khi sửa
+flutter run --flavor dev                                     # debug trên Firebase dev
+flutter run --flavor product                                 # debug trên DB khách hàng (cẩn thận)
+flutter build apk --release --flavor product --split-per-abi  # APK phát hành
+flutter build apk --debug --flavor dev --target-platform android-arm64
+dart run flutter_launcher_icons                              # đổi icon từ assets/images/logo_app.png
+cd noti-server && npm start                                  # worker push (đang trỏ project prod)
 ```
 
 > Trên Windows, `flutter analyze` trả exit code ≠ 0 kể cả khi chỉ có lint `info`. Lọc dòng chứa ` error ` / ` warning ` để biết có lỗi thật không.
+
+## Môi trường dev / product (2 Firebase project)
+
+App **single-tenant** nên mỗi Firebase project = một cửa hàng; dev tách hẳn bằng **product flavor** của Gradle, KHÔNG bằng `--dart-define` tự đặt.
+
+| flavor | Firebase project | applicationId | Nhãn app | google-services.json |
+|---|---|---|---|---|
+| `dev` | `dev-asc` | `dev.asctechsoft` | BizGo Dev | `android/app/src/dev/google-services.json` |
+| `product` | `bizgo-877df` | `com.asc.bizgo` | BizGo | `android/app/google-services.json` — **DỮ LIỆU THẬT CỦA KHÁCH** |
+
+- Plugin `google-services` đọc `src/<flavor>/google-services.json` trước, không thấy mới lấy file ở gốc `android/app/` → bản dev tự lấy `dev-asc`, bản product lấy file gốc. **Đừng xoá/đổi tên file gốc.** `android/app/google-services_dev.json` là bản gốc tải từ console, giữ nguyên; bản Gradle thực sự đọc là copy trong `src/dev/` — tải lại từ console thì cập nhật **cả hai**.
+- `applicationId` phải khớp ĐÚNG `package_name` khai trong json tương ứng, lệch là Gradle báo `No matching client found for package name`.
+- Hai `applicationId` khác nhau ⇒ **cài song song 2 app trên cùng máy**, dữ liệu/đăng nhập tách hẳn.
+- **Tầng Dart chọn project qua `appFlavor`** (`lib/core/firebase_env.dart` → `firebaseOptions`), do chính Flutter tool ghi vào bản build từ cờ `--flavor` → không thể lệch với google-services.json mà Gradle đã nhúng. `lib/firebase_options.dart` = prod, `lib/firebase_options_dev.dart` = dev (chỉ có Android; nền tảng khác **ném lỗi** thay vì rơi về prod).
+- **MỌI** `Firebase.initializeApp` phải dùng `firebaseOptions`, kể cả FirebaseApp phụ `admin_ops` trong `AuthService` (`createUserAsAdmin` / `changePhoneAsAdmin` / `changeCredentials`) — app phụ buộc phải truyền options tay, sót một chỗ là bản dev tạo tài khoản thẳng vào project khách hàng.
+- **Web không có flavor** (`appFlavor == null`) → `flutter build web` luôn ra bản **prod**. Muốn web dev thì đăng ký app web trong `dev-asc` rồi thêm vào `firebase_options_dev.dart`.
+- **`noti-server` vẫn trỏ project prod** (service account trong `.env`). Bản dev tạo doc `notifications` nhưng không ai push, và `npm run wipe-orders` xoá dữ liệu **prod** — muốn worker chạy cho dev thì đổi service account sang `dev-asc`.
+- **iOS chưa có flavor** (không có `GoogleService-Info.plist`, chưa tạo scheme). Làm iOS thì phải thêm scheme + plist riêng cho từng flavor.
 
 ## Bảo mật
 

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "573104976303",
+    "project_id": "dev-asc",
+    "storage_bucket": "dev-asc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:573104976303:android:4ec3bfbc710a030716ff5a",
+        "android_client_info": {
+          "package_name": "dev.asctechsoft"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAT1nSNW2jrPER1GaYQatcgfW2QrckRNv4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
-import '../firebase_options.dart';
+import '../core/firebase_env.dart';
 import '../models/app_user.dart';
 import '../core/demo_accounts.dart';
 import '../core/enums.dart';
@@ -255,7 +255,7 @@ class AuthService {
     try {
       secondary = await Firebase.initializeApp(
         name: 'admin_ops',
-        options: DefaultFirebaseOptions.currentPlatform,
+        options: firebaseOptions,
       );
     } catch (_) {
       secondary = Firebase.app('admin_ops');
@@ -332,7 +332,7 @@ class AuthService {
     try {
       secondary = await Firebase.initializeApp(
         name: 'admin_ops',
-        options: DefaultFirebaseOptions.currentPlatform,
+        options: firebaseOptions,
       );
     } catch (_) {
       secondary = Firebase.app('admin_ops');
@@ -380,7 +380,7 @@ class AuthService {
     try {
       secondary = await Firebase.initializeApp(
         name: 'admin_ops',
-        options: DefaultFirebaseOptions.currentPlatform,
+        options: firebaseOptions,
       );
     } catch (_) {
       secondary = Firebase.app('admin_ops');
