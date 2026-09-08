@@ -14,8 +14,6 @@ import '../models/shop_info.dart';
 /// Font Roboto bundle trong `assets/fonts/` — font mặc định của thư viện `pdf`
 /// (Helvetica) KHÔNG có glyph tiếng Việt, để nguyên thì phiếu in ra mất dấu.
 class InvoicePdf {
-  static const _brand = 'BizGo';
-
   // Nạp 1 lần rồi dùng lại — mỗi file font ~170KB, đọc lại mỗi lần xuất phiếu
   // là phí.
   static pw.Font? _regular;
@@ -46,7 +44,6 @@ class InvoicePdf {
         build: (ctx) => [
           _header(o, shop),
           pw.SizedBox(height: 8),
-          _dashed(),
           _kv('Số phiếu:', o.code, bold: true),
           _kv('Ngày:', fmtDateTime(o.createdAt)),
           pw.SizedBox(height: 6),
@@ -65,12 +62,9 @@ class InvoicePdf {
           if (o.deliveryAddressNote.isNotEmpty)
             _kv('Lưu ý địa chỉ:', o.deliveryAddressNote),
           pw.SizedBox(height: 8),
-          _dashed(),
           _items(o, showMoney),
           pw.SizedBox(height: 6),
-          _dashed(),
           if (showMoney) ...[
-            _kv('Tạm tính:', money(o.subtotal)),
             if (o.shippingFee != 0) _kv('Phí giao:', money(o.shippingFee)),
             if (o.discount != 0) _kv('Giảm giá:', '- ${money(o.discount)}'),
             _kv('TỔNG CỘNG:', money(o.total), bold: true, size: 12),
@@ -86,7 +80,6 @@ class InvoicePdf {
             _kv('Ghi chú:', o.deliveryNote),
           ],
           pw.SizedBox(height: 10),
-          _dashed(),
           pw.SizedBox(height: 24),
           _signatures(),
           pw.SizedBox(height: 16),
@@ -128,13 +121,6 @@ class InvoicePdf {
         child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          pw.Text(_brand,
-              textAlign: pw.TextAlign.center,
-              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 2),
-          pw.Text(shop.title,
-              textAlign: pw.TextAlign.center,
-              style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
           if (shop.phone.isNotEmpty)
             pw.Text('SĐT: ${shop.phone}',
                 textAlign: pw.TextAlign.center,
@@ -291,14 +277,4 @@ class InvoicePdf {
         ),
       );
 
-  static pw.Widget _dashed() => pw.Container(
-        height: 1,
-        margin: const pw.EdgeInsets.symmetric(vertical: 4),
-        decoration: const pw.BoxDecoration(
-          border: pw.Border(
-            bottom: pw.BorderSide(
-                color: PdfColors.grey500, style: pw.BorderStyle.dashed),
-          ),
-        ),
-      );
 }

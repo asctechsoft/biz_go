@@ -7,6 +7,7 @@ import '../../core/formatters.dart';
 import '../../core/permissions.dart';
 import '../../core/theme.dart';
 import '../../models/app_user.dart';
+import '../../models/customer.dart';
 import '../../models/order.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/db.dart';
@@ -97,6 +98,14 @@ class OrderDetailScreen extends StatelessWidget {
                         value: 'edit',
                         icon: Icons.edit_outlined,
                         label: 'Sửa đơn',
+                      ),
+                    // Đặt lại: tạo đơn mới đổ sẵn từ đơn này (khách quen đặt
+                    // lại đơn cũ). Là tạo đơn nên chỉ Chủ.
+                    if (role != null && Perm.createOrder(role))
+                      _menuItem(
+                        value: 'reorder',
+                        icon: Icons.copy_all_outlined,
+                        label: 'Đặt lại đơn này',
                       ),
                     // Hủy / Xoá tách hẳn xuống dưới gạch ngang — thao tác
                     // không hoàn tác được, đừng để nằm sát nút bấm hằng ngày.
@@ -347,6 +356,8 @@ class OrderDetailScreen extends StatelessWidget {
         context,
         MaterialPageRoute(builder: (_) => CreateOrderScreen(editing: o)),
       );
+    } else if (v == 'reorder') {
+      await _reorder(context, db, o);
     } else if (v == 'depart-time') {
       await _pickDepartTime(context, db, o, user);
     } else if (v == 'cancel') {
@@ -356,6 +367,28 @@ class OrderDetailScreen extends StatelessWidget {
         if (context.mounted) toast(context, 'Đã hủy đơn');
       }
     }
+  }
+
+  /// Đặt lại đơn: đọc hồ sơ khách LIVE (địa chỉ có thể đã đổi so với snapshot
+  /// trên đơn cũ) rồi mở màn tạo đơn đổ sẵn khách + địa chỉ + mặt hàng.
+  Future<void> _reorder(BuildContext context, Db db, Order o) async {
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    Customer cust;
+    try {
+      cust = await db.customer(o.customerId).first;
+    } catch (e) {
+      debugPrint('REORDER LOAD CUSTOMER ERROR: $e');
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('Không tìm thấy khách của đơn này để đặt lại.')));
+      return;
+    }
+    nav.push(MaterialPageRoute(
+      builder: (_) =>
+          CreateOrderScreen(reorderFrom: o, reorderCustomer: cust),
+    ));
   }
 }
 

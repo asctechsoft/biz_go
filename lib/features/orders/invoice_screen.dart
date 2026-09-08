@@ -12,10 +12,6 @@ import '../../services/db.dart';
 import '../../services/invoice_pdf.dart';
 import '../../widgets/common.dart';
 
-/// Tên app in ở dòng đầu phiếu. Không sửa được trong Cài đặt — phần sửa được
-/// (tiêu đề cửa hàng + SĐT) nằm ở `meta/shop`, xem [ShopInfo].
-const _brand = 'BizGo';
-
 /// Xuất phiếu ra PDF rồi mở hộp chia sẻ để lưu về máy / gửi Zalo.
 ///
 /// Tách khỏi [InvoiceScreen] để màn chi tiết đơn gọi thẳng được, không phải mở
@@ -162,23 +158,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 Center(
                   child: Column(
                     children: [
-                      const Text(
-                        _brand,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        shop.title,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
                       if (shop.phone.isNotEmpty)
                         Text(
                           'SĐT: ${shop.phone}',
@@ -228,7 +207,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   ),
                 ],
                 const SizedBox(height: 8),
-                _dashed(),
                 // Mã đơn + ngày
                 _line('Số phiếu:', o.code, bold: true),
                 _line('Ngày:', fmtDateTime(o.createdAt)),
@@ -252,7 +230,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 if (o.deliveryAddressNote.isNotEmpty)
                   _line('Lưu ý địa chỉ:', o.deliveryAddressNote),
                 const SizedBox(height: 8),
-                _dashed(),
                 // Bảng sản phẩm — bỏ `const` vì cột "Thành tiền" có điều kiện.
                 Row(
                   children: [
@@ -350,9 +327,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     ),
                   ),
                 const SizedBox(height: 6),
-                _dashed(),
                 if (showMoney) ...[
-                  _line('Tạm tính:', money(o.subtotal)),
                   if (o.shippingFee != 0)
                     _line('Phí giao:', money(o.shippingFee)),
                   if (o.discount != 0)
@@ -396,8 +371,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   const SizedBox(height: 4),
                   _line('Ghi chú:', o.deliveryNote),
                 ],
-                const SizedBox(height: 10),
-                _dashed(),
                 const SizedBox(height: 20),
                 const Row(
                   children: [
@@ -477,13 +450,4 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         ),
       );
 
-  Widget _dashed() => const Padding(
-    padding: EdgeInsets.symmetric(vertical: 4),
-    child: Text(
-      '- - - - - - - - - - - - - - - - - - - - - - - - -',
-      maxLines: 1,
-      overflow: TextOverflow.clip,
-      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-    ),
-  );
 }

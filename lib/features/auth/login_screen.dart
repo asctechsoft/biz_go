@@ -67,7 +67,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _bioLogin() async {
     final creds = await _bio.credentials();
     if (creds == null) {
-      if (mounted) toast(context, 'Chưa có tài khoản lưu. Đăng nhập mật khẩu trước.');
+      if (mounted)
+        toast(context, 'Chưa có tài khoản lưu. Đăng nhập mật khẩu trước.');
       return;
     }
     final okBio = await _bio.authenticate();
@@ -95,22 +96,31 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 24),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(24),
-                  child: Image.asset('assets/images/logo_app.png',
-                      width: 96, height: 96, fit: BoxFit.cover),
+                  child: Image.asset(
+                    'assets/images/logo_app.png',
+                    width: 96,
+                    height: 96,
+                    fit: BoxFit.cover,
+                  ),
                 ),
                 const SizedBox(height: 16),
-                const Text('BizGo',
-                    style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary)),
+                const Text(
+                  'BizGo',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
                 const SizedBox(height: 32),
                 _label('Số điện thoại'),
                 TextField(
                   controller: _phone,
                   keyboardType: TextInputType.phone,
                   inputFormatters: phoneInputFormatters,
-                  decoration: const InputDecoration(hintText: 'Nhập số điện thoại'),
+                  decoration: const InputDecoration(
+                    hintText: 'Nhập số điện thoại',
+                  ),
                 ),
                 const SizedBox(height: 16),
                 _label('Mật khẩu'),
@@ -121,7 +131,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     hintText: 'Nhập mật khẩu',
                     suffixIcon: IconButton(
                       icon: Icon(
-                          _obscure ? Icons.visibility_off : Icons.visibility),
+                        _obscure ? Icons.visibility_off : Icons.visibility,
+                      ),
                       onPressed: () => setState(() => _obscure = !_obscure),
                     ),
                   ),
@@ -142,7 +153,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           height: 22,
                           width: 22,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
                       : const Text('Đăng nhập'),
                 ),
                 if (_bioReady) ...[
@@ -154,8 +168,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
                 const SizedBox(height: 24),
-                const Text('Phiên bản 1.0.0',
-                    style: TextStyle(color: AppColors.textSecondary)),
+                const Text(
+                  'Phiên bản 1.0.0',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
               ],
             ),
           ),
@@ -165,12 +181,16 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _label(String t) => Align(
-        alignment: Alignment.centerLeft,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Text(t,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+    alignment: Alignment.centerLeft,
+    child: Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        t,
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
         ),
-      );
+      ),
+    ),
+  );
 }

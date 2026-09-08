@@ -24,9 +24,28 @@ import '../invoice_screen.dart';
 /// Chế độ sửa KHÔNG cho đổi khách, địa chỉ, tiền trả trước và trạng thái
 /// thanh toán — tiền đã thu là bất biến, đổi những thứ đó là lệch với
 /// `payments` và công nợ đã ghi. Xem [Db.editOrder].
+///
+/// Truyền [reorderFrom] + [reorderCustomer] để **đặt lại**: tạo đơn MỚI hoàn
+/// toàn nhưng đổ sẵn khách + địa chỉ + mặt hàng từ một đơn cũ (thường là đơn đã
+/// xong), khỏi nhập lại từ đầu. Khác chế độ sửa: đây là `createOrder`, sinh mã
+/// mới, tiền/thanh toán bắt đầu lại từ 0. Vào thẳng bước Sản phẩm nhưng vẫn lùi
+/// được để đổi khách/địa chỉ.
 class CreateOrderScreen extends StatefulWidget {
   final Order? editing;
-  const CreateOrderScreen({super.key, this.editing});
+
+  /// Đơn nguồn để đặt lại (chỉ đọc items + phí + địa chỉ snapshot).
+  final Order? reorderFrom;
+
+  /// Hồ sơ khách LIVE của đơn nguồn — đọc lúc bấm "Đặt lại" nên là dữ liệu mới
+  /// nhất (địa chỉ có thể đã đổi so với snapshot trong [reorderFrom]).
+  final Customer? reorderCustomer;
+
+  const CreateOrderScreen({
+    super.key,
+    this.editing,
+    this.reorderFrom,
+    this.reorderCustomer,
+  });
   @override
   State<CreateOrderScreen> createState() => _CreateOrderScreenState();
 }
@@ -100,6 +119,32 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       _payStatus = editing.paymentStatus;
       _plannedDepart = editing.plannedDepartAt;
       _step = _firstStep;
+      return;
+    }
+
+    final reorder = widget.reorderFrom;
+    final reorderCust = widget.reorderCustomer;
+    if (reorder != null && reorderCust != null) {
+      _customer = reorderCust;
+      // Khớp địa chỉ theo snapshot đơn cũ; địa chỉ đã sửa/xoá thì về mặc định.
+      CustomerAddress? match;
+      for (final a in reorderCust.addresses) {
+        if (a.address == reorder.deliveryAddress &&
+            a.receiver == reorder.deliveryReceiver) {
+          match = a;
+          break;
+        }
+      }
+      _address = match ?? reorderCust.defaultAddress;
+      for (final it in reorder.items) {
+        _cart[it.packagingId] = it;
+      }
+      _shipping.text = moneyPlain(reorder.shippingFee);
+      _discount.text = moneyPlain(reorder.discount);
+      _deliveryNote.text = reorder.deliveryNote;
+      // Đơn mới: KHÔNG copy tiền trả trước / trạng thái thu / ghi chú nội bộ /
+      // giờ xuất phát — tất cả bắt đầu lại từ đầu.
+      _step = 2;
       return;
     }
 
