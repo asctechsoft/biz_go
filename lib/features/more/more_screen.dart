@@ -105,6 +105,13 @@ class MoreScreen extends StatelessWidget {
               'Khách hàng',
               '/customers',
             ),
+          if (role != null && Perm.manageCustomers(role))
+            _tile(
+              context,
+              Icons.account_balance_wallet_outlined,
+              'Công nợ',
+              '/debts',
+            ),
           if (role != null && Perm.editCatalog(role))
             _tile(
               context,

@@ -79,7 +79,7 @@ Future<bool> deliverOrder(
 }) async {
   final db = context.read<Db>();
   final me = _me(context);
-  final result = await showPaymentSheet(context, o);
+  final result = await showPaymentSheet(context, o, allowDebt: true);
   if (result == null) return false;
   try {
     await db.markDelivered(
@@ -89,6 +89,7 @@ Future<bool> deliverOrder(
       actorId: me.id,
       actorName: me.name,
       note: result.note,
+      markAsDebt: result.isDebt,
     );
   } catch (e) {
     debugPrint('DELIVER-ORDER ERROR: $e');

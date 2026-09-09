@@ -612,6 +612,19 @@ Future<void> openMap(
   }
 }
 
+/// Mở app quay số với SĐT đã điền sẵn (không tự động gọi — người dùng bấm
+/// gọi trong app quay số, giữ quyền xác nhận cuối cùng).
+Future<void> callPhone(BuildContext context, String phone) async {
+  final p = phone.trim();
+  if (p.isEmpty) return;
+  try {
+    final ok = await launchUrl(Uri(scheme: 'tel', path: p));
+    if (!ok && context.mounted) toast(context, 'Không mở được ứng dụng gọi');
+  } catch (_) {
+    if (context.mounted) toast(context, 'Không mở được ứng dụng gọi');
+  }
+}
+
 /// Đầu bottom sheet: thanh kéo + tiêu đề CĂN GIỮA. Dùng chung cho mọi sheet
 /// để tiêu đề không chỗ trái chỗ giữa.
 class SheetHeader extends StatelessWidget {

@@ -1236,6 +1236,13 @@ class Db {
     required String actorId,
     required String actorName,
     String note = '',
+    // Khách hẹn trả sau — giao thành công nhưng KHÔNG thu gì lúc này. Chốt
+    // luôn `paymentStatus: DEBT` (một trong `_userSetPayStatus`, xem đó) để
+    // đơn hiện đúng chip "Công nợ" thay vì rơi về mặc định lúc tạo đơn, và
+    // lọt vào màn Cài đặt › Công nợ (lọc theo `remaining > 0` trên đơn đã
+    // giao). Thu tiền sau vẫn qua nút "Thu tiền" thường (`recordPayment`) —
+    // nó tự suy `paymentStatus` lại thành PARTIAL/PAID theo số thực thu.
+    bool markAsDebt = false,
   }) async {
     if (collected > 0) {
       await recordPayment(
@@ -1250,12 +1257,16 @@ class Db {
     await _orders.doc(order.id).update({
       'deliveryStatus': DeliveryStatus.DELIVERED.name,
       'orderStatus': OrderStatus.COMPLETED.name,
+      if (markAsDebt) 'paymentStatus': PaymentStatus.DEBT.name,
     });
     await _appendTimeline(
       order.id,
       TimelineEvent(
         at: DateTime.now(),
         title: 'Giao thành công',
+        note: markAsDebt
+            ? 'Khách hẹn trả sau · còn nợ ${money(order.remaining)}'
+            : '',
         actorName: actorName,
       ),
     );
@@ -1268,11 +1279,14 @@ class Db {
       after: {
         'deliveryStatus': DeliveryStatus.DELIVERED.name,
         'collected': collected,
+        if (markAsDebt) 'paymentStatus': PaymentStatus.DEBT.name,
       },
     );
     await _notify(
       title: 'Đơn ${order.code} giao thành công',
-      body: order.customerName,
+      body: markAsDebt
+          ? '${order.customerName} · còn nợ ${money(order.remaining)}'
+          : order.customerName,
       refType: NotifRefType.order,
       refId: order.id,
       roles: {UserRole.owner, UserRole.checker},

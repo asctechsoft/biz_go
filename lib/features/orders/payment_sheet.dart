@@ -10,7 +10,12 @@ class PaymentResult {
   final int amount;
   final PaymentMethod method;
   final String note;
-  PaymentResult(this.amount, this.method, this.note);
+
+  /// Khách hẹn trả sau (không thu gì lúc giao) — chỉ `showPaymentSheet` gọi
+  /// với `allowDebt: true` mới trả về `true` được. [amount] luôn 0 khi cờ
+  /// này bật, [method] không có ý nghĩa (không sinh payment nào).
+  final bool isDebt;
+  PaymentResult(this.amount, this.method, this.note, {this.isDebt = false});
 }
 
 /// Ô chọn **hình thức thu tiền** — bấm vào mở bottom sheet chọn.
@@ -86,7 +91,17 @@ Future<PaymentMethod?> pickPaymentMethod(
 }
 
 /// Mockup 6.5 — Thanh toán / thu tiền.
-Future<PaymentResult?> showPaymentSheet(BuildContext context, Order order) {
+///
+/// [allowDebt] true → thêm nút "Nợ chưa trả": giao hàng xong nhưng khách hẹn
+/// trả sau, không thu đồng nào lúc này. Chỉ màn **Giao thành công** truyền cờ
+/// này ([deliverOrder]) — nút "Thu tiền" độc lập (thu công nợ còn lại) không
+/// cần vì không thu gì thì đóng sheet là xong, không có trạng thái mới nào để
+/// ghi nhận.
+Future<PaymentResult?> showPaymentSheet(
+  BuildContext context,
+  Order order, {
+  bool allowDebt = false,
+}) {
   final remaining = order.remaining > 0 ? order.remaining : 0;
   final amountC = TextEditingController(text: moneyPlain(remaining));
   final noteC = TextEditingController();
@@ -161,6 +176,38 @@ Future<PaymentResult?> showPaymentSheet(BuildContext context, Order order) {
                   ),
                   child: const Text('Xác nhận'),
                 ),
+                if (allowDebt && remaining > 0) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.danger,
+                      side: const BorderSide(color: AppColors.danger),
+                    ),
+                    onPressed: () async {
+                      // Ghi nợ là bấm 1 lần xong, không sửa lại được như số
+                      // tiền — hỏi lại để khỏi lỡ tay bỏ qua cả khoản cần thu.
+                      final ok = await confirmDialog(
+                        ctx,
+                        title: 'Giao hàng, khách hẹn trả sau?',
+                        message:
+                            'Đơn chuyển sang "Giao thành công" nhưng KHÔNG thu '
+                            'đồng nào lúc này — ${money(remaining)} còn lại ghi '
+                            'vào công nợ của khách, thu sau bằng nút "Thu tiền" '
+                            'ở chi tiết đơn.',
+                        confirm: 'Xác nhận nợ',
+                      );
+                      if (ok && ctx.mounted) {
+                        Navigator.pop(
+                          ctx,
+                          PaymentResult(0, method, noteC.text.trim(),
+                              isDebt: true),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.receipt_long_outlined),
+                    label: const Text('Nợ chưa trả'),
+                  ),
+                ],
                 const SizedBox(height: 16),
               ],
             ),
