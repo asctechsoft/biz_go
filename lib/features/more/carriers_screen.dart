@@ -133,9 +133,7 @@ class CarriersScreen extends StatelessWidget {
     );
     if (!ok) return;
     await db.deleteCarrier(c.id);
-    messenger.showSnackBar(
-      SnackBar(content: Text('Đã xóa nhà xe ${c.name}')),
-    );
+    messenger.showSnackBar(SnackBar(content: Text('Đã xóa nhà xe ${c.name}')));
   }
 }
 
@@ -225,9 +223,11 @@ Future<Carrier?> carrierFormSheet(
                           // Trùng tên là nhầm lẫn chứ không phải nhu cầu —
                           // hai dòng y hệt trong ô chọn thì chọn kiểu gì.
                           final all = await db.carriers().first;
-                          final dup = all.any((c) =>
-                              c.id != existing?.id &&
-                              c.name.toLowerCase() == name.toLowerCase());
+                          final dup = all.any(
+                            (c) =>
+                                c.id != existing?.id &&
+                                c.name.toLowerCase() == name.toLowerCase(),
+                          );
                           if (dup) {
                             setSheet(() => error = 'Đã có nhà xe tên này');
                             return;
@@ -262,104 +262,171 @@ class CarrierPick {
 }
 
 /// Ô chọn nhà xe từ danh mục (dùng ở form địa chỉ khách hàng).
-Future<CarrierPick?> pickCarrier(
-  BuildContext context, {
-  String? selectedName,
-}) {
+Future<CarrierPick?> pickCarrier(BuildContext context, {String? selectedName}) {
   final db = context.read<Db>();
+  final searchC = TextEditingController();
   return showModalBottomSheet<CarrierPick>(
     context: context,
     isScrollControlled: true,
-    builder: (ctx) => SafeArea(
-      child: StreamBuilder<List<Carrier>>(
-        stream: db.carriers(),
-        builder: (ctx, snap) {
-          final list = snap.data;
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Text(
-                    'Chọn nhà xe',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-              if (list == null)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: CircularProgressIndicator(),
-                )
-              else ...[
-                Flexible(
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.block_outlined),
-                        title: const Text('Không qua nhà xe (giao thẳng)'),
-                        onTap: () => Navigator.pop(ctx, const CarrierPick(null)),
+    builder: (ctx) => AnimatedPadding(
+      duration: const Duration(milliseconds: 100),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+      child: SafeArea(
+        child: ConstrainedBox(
+          // Bàn phím mở phải kéo sheet lên theo (padding trên), còn chiều
+          // cao tối đa vẫn phải chặn lại kẻo sheet dài hơn cả màn hình.
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.9,
+          ),
+          child: StatefulBuilder(
+            builder: (ctx, setSheet) => StreamBuilder<List<Carrier>>(
+              stream: db.carriers(),
+              builder: (ctx, snap) {
+                final list = snap.data;
+                final query = searchC.text.trim().toLowerCase();
+                final filtered = list == null
+                    ? null
+                    : query.isEmpty
+                    ? list
+                    : list
+                          .where(
+                            (c) =>
+                                c.name.toLowerCase().contains(query) ||
+                                c.phone.toLowerCase().contains(query),
+                          )
+                          .toList();
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          'Chọn nhà xe',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
-                      if (list.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                          child: Text(
-                            'Danh mục nhà xe đang trống. Thêm ở đây hoặc vào '
-                            'Cài đặt › Nhà xe.',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      for (final c in list)
-                        ListTile(
-                          leading: Icon(
-                            c.name.toLowerCase() ==
-                                    (selectedName ?? '').trim().toLowerCase()
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_unchecked,
-                            color: AppColors.primary,
-                          ),
-                          title: Text(c.name),
-                          subtitle: Text(
-                            c.phone.isEmpty ? 'Chưa có SĐT' : c.phone,
-                          ),
-                          onTap: () => Navigator.pop(ctx, CarrierPick(c)),
-                        ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.add, color: AppColors.primary),
-                  title: const Text(
-                    'Thêm nhà xe mới',
-                    style: TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
                     ),
-                  ),
-                  onTap: () async {
-                    final created = await carrierFormSheet(ctx);
-                    // Thêm xong thì chọn luôn — không ai khai nhà xe mới rồi
-                    // lại phải bấm chọn nó lần nữa.
-                    if (created != null && ctx.mounted) {
-                      Navigator.pop(ctx, CarrierPick(created));
-                    }
-                  },
-                ),
-              ],
-            ],
-          );
-        },
+                    if (list != null && list.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: TextField(
+                          controller: searchC,
+                          autofocus: false,
+                          onChanged: (_) => setSheet(() {}),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            prefixIcon: const Icon(Icons.search),
+                            hintText: 'Tìm nhà xe theo tên hoặc SĐT',
+                            suffixIcon: query.isEmpty
+                                ? null
+                                : IconButton(
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () =>
+                                        setSheet(() => searchC.clear()),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    if (list == null)
+                      const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: CircularProgressIndicator(),
+                      )
+                    else ...[
+                      Flexible(
+                        child: ListView(
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                          children: [
+                            if (query.isEmpty)
+                              ListTile(
+                                leading: const Icon(Icons.block_outlined),
+                                title: const Text(
+                                  'Không qua nhà xe (giao thẳng)',
+                                ),
+                                onTap: () =>
+                                    Navigator.pop(ctx, const CarrierPick(null)),
+                              ),
+                            if (list.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                                child: Text(
+                                  'Danh mục nhà xe đang trống. Thêm ở đây hoặc vào '
+                                  'Cài đặt › Nhà xe.',
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              )
+                            else if (filtered!.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                                child: Text(
+                                  'Không tìm thấy nhà xe phù hợp.',
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            for (final c in filtered ?? const <Carrier>[])
+                              ListTile(
+                                leading: Icon(
+                                  c.name.toLowerCase() ==
+                                          (selectedName ?? '')
+                                              .trim()
+                                              .toLowerCase()
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_unchecked,
+                                  color: AppColors.primary,
+                                ),
+                                title: Text(c.name),
+                                subtitle: Text(
+                                  c.phone.isEmpty ? 'Chưa có SĐT' : c.phone,
+                                ),
+                                onTap: () => Navigator.pop(ctx, CarrierPick(c)),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.add,
+                          color: AppColors.primary,
+                        ),
+                        title: const Text(
+                          'Thêm nhà xe mới',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        onTap: () async {
+                          final created = await carrierFormSheet(
+                            ctx,
+                            initialName: searchC.text.trim(),
+                          );
+                          // Thêm xong thì chọn luôn — không ai khai nhà xe mới rồi
+                          // lại phải bấm chọn nó lần nữa.
+                          if (created != null && ctx.mounted) {
+                            Navigator.pop(ctx, CarrierPick(created));
+                          }
+                        },
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
       ),
     ),
   );

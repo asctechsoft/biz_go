@@ -210,7 +210,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 _line('Ngày:', fmtDateTime(o.createdAt)),
                 const SizedBox(height: 6),
                 // Khách hàng
-                _line('Khách hàng:', o.customerName, bold: true),
+                _line('Khách hàng nhận:', o.customerName, bold: true),
                 _line('Điện thoại:', o.customerPhone),
                 _line(
                   'Địa chỉ:',
