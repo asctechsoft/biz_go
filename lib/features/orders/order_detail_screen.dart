@@ -88,8 +88,8 @@ class OrderDetailScreen extends StatelessWidget {
                       ),
                       _menuItem(
                         value: 'pdf',
-                        icon: Icons.picture_as_pdf_outlined,
-                        label: 'Tải PDF',
+                        icon: Icons.share_outlined,
+                        label: 'Chia sẻ hóa đơn',
                       ),
                     ],
                     if (role != null &&

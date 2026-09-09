@@ -108,10 +108,13 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
               onPressed: () => setState(() => _override = !showMoney),
             ),
           IconButton(
-            icon: const Icon(Icons.download_outlined),
-            tooltip: 'Tải PDF',
-            // PHẢI truyền showMoney: xem bản ẩn tiền rồi bấm tải mà quên cờ
-            // này thì PDF ra bản đầy đủ giá — lộ đúng thứ vừa che.
+            // Trên Android/iOS, downloadInvoicePdf mở thẳng hộp chia sẻ hệ
+            // thống (Zalo/Messenger/FB/tin nhắn...), không chỉ lưu file —
+            // đặt icon/nhãn đúng bản chất để khỏi ai đó chụp màn hình gửi tay.
+            icon: const Icon(Icons.share_outlined),
+            tooltip: 'Chia sẻ hóa đơn',
+            // PHẢI truyền showMoney: xem bản ẩn tiền rồi bấm chia sẻ mà quên
+            // cờ này thì PDF ra bản đầy đủ giá — lộ đúng thứ vừa che.
             onPressed: () =>
                 downloadInvoicePdf(context, o, shop, showMoney: showMoney),
           ),
@@ -148,7 +151,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         ],
       ),
       body: ListView(
-        // Chừa chỗ cho thanh điều hướng Android — nút "Tải PDF" nằm cuối trang.
+        // Chừa chỗ cho thanh điều hướng Android — nút "Chia sẻ" nằm cuối trang.
         padding: EdgeInsets.fromLTRB(
           16,
           16,
@@ -391,8 +394,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
           OutlinedButton.icon(
             onPressed: () =>
                 downloadInvoicePdf(context, o, shop, showMoney: showMoney),
-            icon: const Icon(Icons.download_outlined),
-            label: const Text('Tải PDF'),
+            icon: const Icon(Icons.share_outlined),
+            label: const Text('Chia sẻ hóa đơn'),
           ),
           const SizedBox(height: 40),
         ],
