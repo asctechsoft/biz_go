@@ -44,7 +44,7 @@ class _CustomerDebtsScreenState extends State<CustomerDebtsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Công nợ')),
+      appBar: AppBar(title: const Text('Đơn ghi nợ')),
       body: Column(
         children: [
           Padding(

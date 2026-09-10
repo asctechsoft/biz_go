@@ -495,7 +495,9 @@ class Db {
       body: '${o.customerName} · tạo nhầm',
       refType: NotifRefType.order,
       refId: o.id,
-      roles: {UserRole.checker, UserRole.warehouse},
+      // Chỉ Kiểm hàng: đây là tin cho người soạn hàng, mà kho giờ chỉ còn
+      // vai trò đó lo (Sale chỉ tạo đơn, không đụng kho).
+      roles: {UserRole.checker},
       icon: 'fail',
     );
   }
@@ -821,7 +823,7 @@ class Db {
       body: summary,
       refType: NotifRefType.order,
       refId: order.id,
-      roles: {UserRole.checker, UserRole.warehouse},
+      roles: {UserRole.checker},
       icon: 'alert',
     );
   }

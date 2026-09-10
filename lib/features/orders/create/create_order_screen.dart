@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../core/enums.dart';
 import '../../../core/error_text.dart';
 import '../../../core/formatters.dart';
+import '../../../core/permissions.dart';
 import '../../../core/theme.dart';
 import '../../../models/customer.dart';
 import '../../../models/order.dart';
@@ -13,6 +14,7 @@ import '../../../providers/auth_provider.dart';
 import '../../../services/db.dart';
 import '../../../services/sound_service.dart';
 import '../../../widgets/common.dart';
+import '../../customers/customer_detail_screen.dart';
 import '../../customers/customer_edit_screen.dart';
 import '../invoice_screen.dart';
 
@@ -145,6 +147,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       // Đơn mới: KHÔNG copy tiền trả trước / trạng thái thu / ghi chú nội bộ /
       // giờ xuất phát — tất cả bắt đầu lại từ đầu.
       _step = 2;
+      _warnDebtIfAny(reorderCust);
       return;
     }
 
@@ -153,6 +156,62 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       _customer = extra;
       _address = extra.defaultAddress;
       _step = 2;
+      _warnDebtIfAny(extra);
+    }
+  }
+
+  /// Khách còn nợ đơn cũ chưa thanh toán → cảnh báo trước khi tạo đơn mới,
+  /// không chặn — chỉ "Đóng" là tạo tiếp bình thường, không phải chốt lại
+  /// giao dịch cũ mới được bán tiếp.
+  ///
+  /// Dùng `Customer.debt` (cộng dồn ngay lúc TẠO đơn) chứ không lọc riêng đơn
+  /// đã giao như màn Cài đặt › Đơn ghi nợ: ở đây cần biết TOÀN BỘ tiền khách
+  /// còn thiếu, kể cả đơn cũ chưa giao, để cân nhắc có bán chịu tiếp hay không.
+  ///
+  /// CHỈ hiện với vai trò quản được khách hàng (Chủ): con số nợ là tiền, mà
+  /// nút "Nhắc nợ" mở thẳng màn chi tiết khách — nơi có cả nút "Thu công nợ".
+  /// Sale cũng tạo đơn được nhưng không được xem tiền lẫn thu tiền.
+  void _warnDebtIfAny(Customer c) {
+    if (c.debt <= 0) return;
+    final role = context.read<AuthProvider>().user?.role;
+    if (role == null || !Perm.manageCustomers(role)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showDebtDialog(c);
+    });
+  }
+
+  Future<void> _showDebtDialog(Customer c) async {
+    final remind = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Khách đang nợ'),
+        content: Text(
+          '${c.name} còn nợ ${money(c.debt)} từ đơn cũ chưa thanh toán.',
+        ),
+        actions: [
+          // `ElevatedButton` theme mặc định rộng hết cỡ (`Size.fromHeight`),
+          // đặt trong `actions` mà không ghi đè `minimumSize` thì AlertDialog
+          // tưởng 2 nút không đủ chỗ, tự xếp dọc — giống cách `confirmDialog`
+          // trong common.dart đang né.
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(minimumSize: const Size(88, 40)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Nhắc nợ'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
+    if (remind == true && mounted) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CustomerDetailScreen(customerId: c.id),
+        ),
+      );
     }
   }
 
@@ -172,6 +231,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   int get _subtotal => _cart.values.fold(0, (s, i) => s + i.lineTotal);
   int get _total => _subtotal + _int(_shipping) - _int(_discount);
   int get _codRemaining => _total - _int(_prepaid);
+
+  /// Được chốt tiền ngay lúc tạo đơn (ô "Khách trả trước" + trạng thái thanh
+  /// toán) — chỉ Chủ. Sale tạo đơn thì đơn để nguyên UNPAID.
+  bool get _canCollect {
+    final role = context.read<AuthProvider>().user?.role;
+    return role != null && Perm.collectPayment(role);
+  }
 
   void _back() {
     // Sửa đơn thì bước 2 là bước đầu — lùi thêm nữa là thoát màn.
@@ -374,10 +440,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                             ? const Icon(Icons.check_circle,
                                 color: AppColors.success)
                             : null,
-                        onTap: () => setState(() {
-                          _customer = c;
-                          _address = c.defaultAddress;
-                        }),
+                        onTap: () {
+                          setState(() {
+                            _customer = c;
+                            _address = c.defaultAddress;
+                          });
+                          _warnDebtIfAny(c);
+                        },
                       ),
                     ),
                 ],
@@ -1006,7 +1075,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               // Sửa đơn KHÔNG cho đụng tiền đã thu: `prepaid` đã cộng vào
               // `paidAmount` và công nợ khách lúc tạo đơn, sửa số đó ở đây là
               // sai lệch sổ sách mà không có payment nào đối chứng.
-              if (!_isEdit) ...[
+              //
+              // Sale cũng KHÔNG được 2 ô này: `prepaid` cộng thẳng vào
+              // `totalPaid` + trừ công nợ khách mà không sinh doc `payments`
+              // nào đối chứng, nên nó là thu tiền trá hình — để đúng người có
+              // [Perm.collectPayment] (Chủ) làm. Sale tạo đơn xong đơn nằm ở
+              // UNPAID, Chủ thu sau bằng nút "Thu tiền".
+              if (!_isEdit && _canCollect) ...[
                 _numField('Khách trả trước', _prepaid),
                 const SizedBox(height: 4),
                 InkWell(

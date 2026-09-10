@@ -27,7 +27,7 @@ class UserManagementScreen extends StatelessWidget {
   static const _creatableRoles = [
     UserRole.owner,
     UserRole.checker,
-    UserRole.warehouse,
+    UserRole.sale,
   ];
 
   @override

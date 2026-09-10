@@ -11,22 +11,24 @@ import 'theme.dart';
 enum UserRole {
   owner, // Chủ — toàn quyền: tạo đơn, giá, khách, báo cáo, đối soát giao hàng
   checker, // Kiểm hàng — chuẩn bị, đóng hàng, in phiếu, cho đơn xuất phát
-  warehouse, // Kiểm kho — thao tác kho, xem đơn
+  sale, // Sale — CHỈ tạo đơn, không sửa/xóa đơn, không thao tác kho/tiền
 }
 
 extension UserRoleX on UserRole {
   String get label => switch (this) {
     UserRole.owner => 'Chủ',
     UserRole.checker => 'Kiểm hàng',
-    UserRole.warehouse => 'Kiểm kho',
+    UserRole.sale => 'Sale',
   };
 }
 
-/// Hồ sơ cũ còn `role: 'shipper'` (vai trò đã bỏ) rơi về [UserRole.warehouse]
-/// — quyền thấp nhất, đúng nguyên tắc fallback an toàn.
+/// Hồ sơ cũ còn `role: 'shipper'` (vai trò đã bỏ) hoặc `role: 'warehouse'`
+/// (Kiểm kho — đổi tên/đổi quyền thành `sale` từ bản này, kho đã gộp hẳn vào
+/// việc của Kiểm hàng) đều không khớp tên enum nào nữa nên rơi về
+/// [UserRole.sale] — quyền thấp nhất, đúng nguyên tắc fallback an toàn.
 UserRole roleFromName(String? n) => UserRole.values.firstWhere(
   (e) => e.name == n,
-  orElse: () => UserRole.warehouse,
+  orElse: () => UserRole.sale,
 );
 
 // §18.1 Order Status

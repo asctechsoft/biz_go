@@ -109,7 +109,7 @@ class MoreScreen extends StatelessWidget {
             _tile(
               context,
               Icons.account_balance_wallet_outlined,
-              'Công nợ',
+              'Đơn ghi nợ',
               '/debts',
             ),
           if (role != null && Perm.editCatalog(role))

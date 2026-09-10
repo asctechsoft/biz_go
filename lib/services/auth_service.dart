@@ -368,7 +368,7 @@ class AuthService {
     return u;
   }
 
-  /// Chủ tạo tài khoản cho nhân viên (Kiểm hàng/Kiểm kho) mà KHÔNG bị đăng xuất.
+  /// Chủ tạo tài khoản cho nhân viên (Kiểm hàng/Sale) mà KHÔNG bị đăng xuất.
   /// Dùng một FirebaseApp phụ để tạo user, xong huỷ app phụ.
   Future<AppUser> createUserAsAdmin({
     required String phone,

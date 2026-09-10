@@ -3,12 +3,17 @@ import 'enums.dart';
 /// RBAC (§3) — luồng KHÔNG có tài xế:
 /// - Chủ (owner): toàn quyền. Là người duy nhất đối soát giao hàng + thu tiền.
 /// - Kiểm hàng (checker): kho/đóng hàng/in phiếu + bấm "Xuất phát" cho đơn.
-/// - Kiểm kho (warehouse): chỉ thao tác kho + xem đơn.
+/// - Sale: CHỈ tạo đơn (kể cả "Đặt lại đơn"). Không sửa/xóa/hủy đơn, không
+///   thao tác kho, không xem tiền — vai trò cũ "Kiểm kho" (warehouse) đã đổi
+///   quyền thành cái này, kho giờ gộp hẳn vào việc của Kiểm hàng.
 class Perm {
   static bool owner(UserRole r) => r == UserRole.owner;
 
-  // Chủ độc quyền.
-  static bool createOrder(UserRole r) => r == UserRole.owner;
+  /// Chủ tạo đơn đầy đủ (sửa giá, đặt cọc, trạng thái thanh toán...). Sale
+  /// cũng tạo được — nhưng KHÔNG có [editOrder]/[deleteOrder]/[cancelOrder]
+  /// nên đơn tạo xong là xong, đụng gì tiếp phải nhờ Chủ.
+  static bool createOrder(UserRole r) =>
+      r == UserRole.owner || r == UserRole.sale;
 
   /// Sửa đơn đã tạo (thêm/bớt hàng, đổi giá, phí). Chỉ Chủ — đụng vào tiền.
   static bool editOrder(UserRole r) => r == UserRole.owner;
@@ -38,18 +43,18 @@ class Perm {
   static bool viewAudit(UserRole r) => r == UserRole.owner;
   static bool cancelOrder(UserRole r) => r == UserRole.owner;
 
-  // Kho / đóng hàng / in phiếu — Chủ + Kiểm hàng + Kiểm kho.
+  // Kho / đóng hàng — Chủ + Kiểm hàng. Sale không còn thao tác kho (đã đổi
+  // từ Kiểm kho sang chỉ tạo đơn).
   static bool warehouseOps(UserRole r) =>
-      r == UserRole.owner ||
-      r == UserRole.checker ||
-      r == UserRole.warehouse;
+      r == UserRole.owner || r == UserRole.checker;
+
+  // In phiếu — Chủ + Kiểm hàng + Sale (Sale tạo đơn xong vẫn cần in/chia sẻ
+  // phiếu cho khách, `viewMoney` vẫn ẩn giá với Sale như cũ).
   static bool printInvoice(UserRole r) =>
-      r == UserRole.owner ||
-      r == UserRole.checker ||
-      r == UserRole.warehouse;
+      r == UserRole.owner || r == UserRole.checker || r == UserRole.sale;
 
   /// Bấm "Xuất phát" — đơn đã đóng hàng → Đang giao. Chủ + Kiểm hàng.
-  /// Kiểm kho soạn/đóng hàng thôi, không quyết định cho hàng đi.
+  /// Sale chỉ tạo đơn, không quyết định cho hàng đi.
   static bool startDelivery(UserRole r) =>
       r == UserRole.owner || r == UserRole.checker;
 
@@ -62,7 +67,7 @@ class Perm {
 
   /// Được nhìn thấy **mọi con số tiền**: đơn giá, thành tiền, tổng cộng, đã
   /// thu, còn thiếu — trong app lẫn trên phiếu in. Chủ + Kiểm hàng (kiêm
-  /// kế toán). Chỉ **Kiểm kho** bị ẩn tiền — họ chỉ cần mặt hàng + số lượng.
+  /// kế toán). Chỉ **Sale** bị ẩn tiền — họ chỉ cần mặt hàng + số lượng.
   ///
   /// Gate này áp ở TỪNG chỗ hiện tiền — danh sách đơn, chi tiết đơn, màn
   /// giao hàng, phiếu xem trước và PDF — chứ không có một chỗ chặn chung nào.
@@ -73,7 +78,8 @@ class Perm {
   /// Tab hiện ở bottom nav theo vai trò.
   ///
   /// `/dashboard` có ở Chủ + Kiểm hàng — [home] lấy tab đầu tiên, nên hai vai
-  /// trò này vào thẳng Tổng quan. Kiểm kho không có, vào thẳng màn Đơn hàng.
+  /// trò này vào thẳng Tổng quan. Sale không có, vào thẳng màn Đơn hàng (bấm
+  /// nút "+" ở đó để tạo đơn — [createOrder] gate cái nút, không phải tab).
   static List<String> tabs(UserRole r) => switch (r) {
         UserRole.owner => const [
             '/dashboard',
@@ -87,7 +93,7 @@ class Perm {
             '/delivery',
             '/more'
           ],
-        UserRole.warehouse => const ['/orders', '/more'],
+        UserRole.sale => const ['/orders', '/more'],
       };
 
   /// Route đầu tiên hợp lệ — dùng khi redirect sau đăng nhập.
@@ -107,9 +113,8 @@ class Perm {
           p('/notifications') ||
           p('/filter');
     }
-    // warehouse — kho + xem đơn
+    // sale — chỉ tạo đơn + xem đơn, KHÔNG có kho
     return p('/orders') ||
-        p('/warehouse') ||
         p('/more') ||
         p('/notifications') ||
         p('/filter');
