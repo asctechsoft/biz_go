@@ -15,6 +15,31 @@ String moneyPlain(num v) => _currency.format(v);
 int parseMoney(String s) =>
     int.tryParse(s.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
 
+const _accentGroups = {
+  'a': 'àáạảãâầấậẩẫăằắặẳẵ',
+  'e': 'èéẹẻẽêềếệểễ',
+  'i': 'ìíịỉĩ',
+  'o': 'òóọỏõôồốộổỗơờớợởỡ',
+  'u': 'ùúụủũưừứựửữ',
+  'y': 'ỳýỵỷỹ',
+  'd': 'đ',
+};
+
+final _noAccent = <String, String>{
+  for (final g in _accentGroups.entries)
+    for (final c in g.value.split('')) c: g.key,
+};
+
+/// Chuẩn hoá chuỗi để so khớp khi tìm kiếm: thường hoá + bỏ dấu tiếng Việt.
+/// Bàn phím điện thoại hay gõ không dấu nên "bot vien" phải ra "Bột viên".
+String searchKey(String s) {
+  final b = StringBuffer();
+  for (final c in s.toLowerCase().split('')) {
+    b.write(_noAccent[c] ?? c);
+  }
+  return b.toString();
+}
+
 /// Formatter cho ô nhập SĐT: chỉ cho số, tối đa 11 chữ số (SĐT VN).
 final phoneInputFormatters = <TextInputFormatter>[
   FilteringTextInputFormatter.digitsOnly,

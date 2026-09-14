@@ -63,6 +63,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   final Map<String, int> _listPrice = {};
   String _custQuery = '';
 
+  /// Từ khoá tìm sản phẩm ở bước 2, đã tách thành các token không dấu.
+  /// Rỗng = không tìm → hiện lại TabBar theo sản phẩm như cũ.
+  final _prodSearch = TextEditingController();
+  List<String> _prodTokens = const [];
+
   final _shipping = TextEditingController(text: '0');
   final _discount = TextEditingController(text: '0');
   final _prepaid = TextEditingController(text: '0');
@@ -222,6 +227,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     _prepaid.dispose();
     _note.dispose();
     _deliveryNote.dispose();
+    _prodSearch.dispose();
     super.dispose();
   }
 
@@ -542,25 +548,33 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         if (products.isEmpty) {
           return const EmptyState(text: 'Chưa có sản phẩm');
         }
+        final searching = _prodTokens.isNotEmpty;
         return DefaultTabController(
           length: products.length,
           child: Column(
             children: [
-              TabBar(
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                labelColor: AppColors.primary,
-                indicatorColor: AppColors.primary,
-                unselectedLabelColor: AppColors.textSecondary,
-                tabs: [for (final p in products) Tab(text: p.name)],
-              ),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    for (final p in products) _productList([p]),
-                  ],
+              _productSearchField(),
+              // Đang tìm thì BỎ tab đi: từ khoá phải quét qua MỌI sản phẩm,
+              // chứ gõ tên hàng nằm ở tab khác mà không thấy gì là vô dụng.
+              if (searching)
+                Expanded(child: _searchResults(products))
+              else ...[
+                TabBar(
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  labelColor: AppColors.primary,
+                  indicatorColor: AppColors.primary,
+                  unselectedLabelColor: AppColors.textSecondary,
+                  tabs: [for (final p in products) Tab(text: p.name)],
                 ),
-              ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      for (final p in products) _productList(_rowsOf([p])),
+                    ],
+                  ),
+                ),
+              ],
               if (_cart.isNotEmpty)
                 Container(
                   color: AppColors.primaryLight,
@@ -583,7 +597,41 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     );
   }
 
-  Widget _productList(List<Product> products) {
+  /// Ô tìm hàng, nằm TRÊN thanh tab nên luôn thấy dù đang ở tab nào.
+  Widget _productSearchField() {
+    final searching = _prodTokens.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      child: TextField(
+        controller: _prodSearch,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Tìm tên hàng, phân loại, quy cách...',
+          prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+          suffixIcon: searching
+              ? IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  color: AppColors.textSecondary,
+                  onPressed: () {
+                    _prodSearch.clear();
+                    FocusScope.of(context).unfocus();
+                    setState(() => _prodTokens = const []);
+                  },
+                )
+              : null,
+        ),
+        // Tách token để gõ thiếu thứ tự vẫn ra: "vien 1kg" khớp "Bột viên 1kg".
+        onChanged: (v) => setState(() => _prodTokens = searchKey(v)
+            .split(RegExp(r'\s+'))
+            .where((t) => t.isNotEmpty)
+            .toList()),
+      ),
+    );
+  }
+
+  /// Mọi quy cách đang bán của [products], phẳng ra thành từng dòng chọn được.
+  List<(Product, ProductVariant, Packaging)> _rowsOf(List<Product> products) {
     final rows = <(Product, ProductVariant, Packaging)>[];
     for (final p in products) {
       for (final v in p.variants) {
@@ -592,6 +640,38 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         }
       }
     }
+    return rows;
+  }
+
+  /// Kết quả tìm xuyên mọi sản phẩm. Khớp trên tên sản phẩm + phân loại + quy
+  /// cách, mọi token phải có mặt.
+  Widget _searchResults(List<Product> products) {
+    final rows = _rowsOf(products).where((r) {
+      final key = searchKey('${r.$1.name} ${r.$2.name} ${r.$3.name}');
+      return _prodTokens.every(key.contains);
+    }).toList();
+    if (rows.isEmpty) {
+      return const EmptyState(text: 'Không tìm thấy mặt hàng nào');
+    }
+    return Column(
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Text('${rows.length} kết quả',
+                style: const TextStyle(
+                    fontSize: 12, color: AppColors.textSecondary)),
+          ),
+        ),
+        // Ẩn tab rồi nên dòng hàng phải tự nói nó thuộc sản phẩm nào.
+        Expanded(child: _productList(rows, showProductName: true)),
+      ],
+    );
+  }
+
+  Widget _productList(List<(Product, ProductVariant, Packaging)> rows,
+      {bool showProductName = false}) {
     return ListView.separated(
       padding: const EdgeInsets.all(12),
       itemCount: rows.length,
@@ -615,11 +695,19 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             // Giá sửa tay thì cho "Giá bảng ..." XUỐNG DÒNG RIÊNG, không nhét
             // chung một dòng — nhét chung là chật rồi cắt cụt thành "(đã s…",
             // đọc không ra. Mỗi dòng ngắn thì không bao giờ phải cắt.
-            isThreeLine: edited,
+            isThreeLine: edited || showProductName,
             subtitle: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (showProductName && v.name.trim().isNotEmpty)
+                  Text(p.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary)),
                 Text.rich(
                   TextSpan(
                     children: [

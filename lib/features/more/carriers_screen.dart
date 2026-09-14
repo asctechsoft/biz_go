@@ -13,8 +13,22 @@ import '../../widgets/common.dart';
 /// Chỉ là sổ tay tên + SĐT nhà xe hay dùng, để lúc thêm địa chỉ khách khỏi
 /// phải gõ lại. Địa chỉ khách và đơn hàng vẫn giữ bản chép riêng, nên sửa/xoá
 /// ở đây KHÔNG đổi địa chỉ đã lưu hay phiếu đã in — xem [Carrier].
-class CarriersScreen extends StatelessWidget {
+class CarriersScreen extends StatefulWidget {
   const CarriersScreen({super.key});
+
+  @override
+  State<CarriersScreen> createState() => _CarriersScreenState();
+}
+
+class _CarriersScreenState extends State<CarriersScreen> {
+  final _search = TextEditingController();
+  List<String> _tokens = const [];
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,82 +41,32 @@ class CarriersScreen extends StatelessWidget {
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final list = snap.data!;
-          if (list.isEmpty) {
+          final all = snap.data!;
+          if (all.isEmpty) {
             return const EmptyState(
               icon: Icons.directions_bus_outlined,
               text: 'Chưa có nhà xe nào.\nBấm "Thêm" để khai nhà xe hay dùng.',
             );
           }
-          return SlidableAutoCloseBehavior(
-            child: ListView.separated(
-              padding: EdgeInsets.fromLTRB(
-                12,
-                12,
-                12,
-                88 + MediaQuery.of(context).padding.bottom,
-              ),
-              itemCount: list.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, i) {
-                final c = list[i];
-                final tile = ListTile(
-                  onTap: () => carrierFormSheet(context, existing: c),
-                  leading: const CircleAvatar(
-                    backgroundColor: AppColors.primaryLight,
-                    child: Icon(
-                      Icons.directions_bus_outlined,
-                      color: AppColors.primary,
-                    ),
+          final list = _tokens.isEmpty
+              ? all
+              : all.where((c) {
+                  final key = searchKey('${c.name} ${c.phone}');
+                  return _tokens.every(key.contains);
+                }).toList();
+          return Column(
+            children: [
+              _searchField(),
+              if (list.isEmpty)
+                const Expanded(
+                  child: EmptyState(
+                    icon: Icons.search_off,
+                    text: 'Không tìm thấy nhà xe nào',
                   ),
-                  title: Text(
-                    c.name,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  subtitle: Text(
-                    c.phone.isEmpty ? 'Chưa có SĐT' : c.phone,
-                    style: TextStyle(
-                      color: c.phone.isEmpty
-                          ? AppColors.textSecondary
-                          : AppColors.textPrimary,
-                    ),
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                );
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Slidable(
-                    key: ValueKey(c.id),
-                    groupTag: 'carriers',
-                    endActionPane: ActionPane(
-                      motion: const DrawerMotion(),
-                      extentRatio: 0.28,
-                      children: [
-                        SlidableAction(
-                          onPressed: (ctx) => _delete(ctx, db, c),
-                          backgroundColor: AppColors.danger,
-                          foregroundColor: Colors.white,
-                          icon: Icons.delete,
-                          label: 'Xóa',
-                        ),
-                      ],
-                    ),
-                    child: Material(
-                      color: AppColors.card,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: AppColors.border),
-                          borderRadius: const BorderRadius.horizontal(
-                            left: Radius.circular(12),
-                          ),
-                        ),
-                        child: tile,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+                )
+              else
+                Expanded(child: _list(db, list)),
+            ],
           );
         },
       ),
@@ -111,6 +75,112 @@ class CarriersScreen extends StatelessWidget {
         onPressed: () => carrierFormSheet(context),
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Thêm', style: TextStyle(color: Colors.white)),
+      ),
+    );
+  }
+
+  Widget _searchField() {
+    final searching = _tokens.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: TextField(
+        controller: _search,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Tìm nhà xe theo tên hoặc SĐT...',
+          prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+          suffixIcon: searching
+              ? IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  color: AppColors.textSecondary,
+                  onPressed: () {
+                    _search.clear();
+                    FocusScope.of(context).unfocus();
+                    setState(() => _tokens = const []);
+                  },
+                )
+              : null,
+        ),
+        onChanged: (v) => setState(
+          () => _tokens = searchKey(v)
+              .split(RegExp(r'\s+'))
+              .where((t) => t.isNotEmpty)
+              .toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _list(Db db, List<Carrier> list) {
+    return SlidableAutoCloseBehavior(
+      child: ListView.separated(
+        padding: EdgeInsets.fromLTRB(
+          12,
+          8,
+          12,
+          88 + MediaQuery.of(context).padding.bottom,
+        ),
+        itemCount: list.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
+        itemBuilder: (context, i) {
+          final c = list[i];
+          final tile = ListTile(
+            onTap: () => carrierFormSheet(context, existing: c),
+            leading: const CircleAvatar(
+              backgroundColor: AppColors.primaryLight,
+              child: Icon(
+                Icons.directions_bus_outlined,
+                color: AppColors.primary,
+              ),
+            ),
+            title: Text(
+              c.name,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              c.phone.isEmpty ? 'Chưa có SĐT' : c.phone,
+              style: TextStyle(
+                color: c.phone.isEmpty
+                    ? AppColors.textSecondary
+                    : AppColors.textPrimary,
+              ),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+          );
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Slidable(
+              key: ValueKey(c.id),
+              groupTag: 'carriers',
+              endActionPane: ActionPane(
+                motion: const DrawerMotion(),
+                extentRatio: 0.28,
+                children: [
+                  SlidableAction(
+                    onPressed: (ctx) => _delete(ctx, db, c),
+                    backgroundColor: AppColors.danger,
+                    foregroundColor: Colors.white,
+                    icon: Icons.delete,
+                    label: 'Xóa',
+                  ),
+                ],
+              ),
+              child: Material(
+                color: AppColors.card,
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.border),
+                    borderRadius: const BorderRadius.horizontal(
+                      left: Radius.circular(12),
+                    ),
+                  ),
+                  child: tile,
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -283,18 +353,19 @@ Future<CarrierPick?> pickCarrier(BuildContext context, {String? selectedName}) {
               stream: db.carriers(),
               builder: (ctx, snap) {
                 final list = snap.data;
-                final query = searchC.text.trim().toLowerCase();
+                final query = searchC.text.trim();
+                final tokens = searchKey(query)
+                    .split(RegExp(r'\s+'))
+                    .where((t) => t.isNotEmpty)
+                    .toList();
                 final filtered = list == null
                     ? null
-                    : query.isEmpty
+                    : tokens.isEmpty
                     ? list
-                    : list
-                          .where(
-                            (c) =>
-                                c.name.toLowerCase().contains(query) ||
-                                c.phone.toLowerCase().contains(query),
-                          )
-                          .toList();
+                    : list.where((c) {
+                        final key = searchKey('${c.name} ${c.phone}');
+                        return tokens.every(key.contains);
+                      }).toList();
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
