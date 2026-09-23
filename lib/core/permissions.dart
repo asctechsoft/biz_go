@@ -31,9 +31,6 @@ class Perm {
   /// Danh mục nhà xe (Cài đặt › Nhà xe). Chỉ Chủ — cùng nhóm với danh mục
   /// khách hàng / sản phẩm.
   static bool manageCarriers(UserRole r) => r == UserRole.owner;
-  // Báo cáo doanh thu — Chủ + Kiểm hàng (kiêm kế toán). Chỉ đọc số liệu.
-  static bool viewReports(UserRole r) =>
-      r == UserRole.owner || r == UserRole.checker;
 
   /// Màn **Tổng quan** — doanh thu, biểu đồ, công nợ. Chủ + Kiểm hàng
   /// (kiêm kế toán, cần theo dõi số liệu). Kiểm kho không thấy.
@@ -85,6 +82,7 @@ class Perm {
             '/dashboard',
             '/orders',
             '/delivery',
+            '/reports',
             '/more'
           ],
         UserRole.checker => const [
@@ -111,12 +109,12 @@ class Perm {
           p('/more') ||
           p('/invoice-settings') ||
           p('/notifications') ||
-          p('/filter');
+          p('/order-search');
     }
     // sale — chỉ tạo đơn + xem đơn, KHÔNG có kho
     return p('/orders') ||
         p('/more') ||
         p('/notifications') ||
-        p('/filter');
+        p('/order-search');
   }
 }

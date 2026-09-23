@@ -14,6 +14,7 @@ class MainShell extends StatelessWidget {
     ('/dashboard', Icons.home_outlined, Icons.home, 'Tổng quan'),
     ('/orders', Icons.receipt_long_outlined, Icons.receipt_long, 'Đơn hàng'),
     ('/delivery', Icons.local_shipping_outlined, Icons.local_shipping, 'Giao hàng'),
+    ('/reports', Icons.bar_chart_outlined, Icons.bar_chart, 'Báo cáo'),
     ('/more', Icons.settings_outlined, Icons.settings, 'Cài đặt'),
   ];
 

@@ -376,24 +376,34 @@ class OrderDetailScreen extends StatelessWidget {
       debugPrint('REORDER LOAD CUSTOMER ERROR: $e');
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-            content: Text('Không tìm thấy khách của đơn này để đặt lại.')));
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Không tìm thấy khách của đơn này để đặt lại.'),
+          ),
+        );
       return;
     }
-    nav.push(MaterialPageRoute(
-      builder: (_) =>
-          CreateOrderScreen(reorderFrom: o, reorderCustomer: cust),
-    ));
+    nav.push(
+      MaterialPageRoute(
+        builder: (_) =>
+            CreateOrderScreen(reorderFrom: o, reorderCustomer: cust),
+      ),
+    );
   }
 }
 
 /// Xoá hẳn đơn tạo nhầm, sau khi hỏi lại thật rõ là không hoàn tác được.
 Future<void> _deleteOrder(
-    BuildContext context, Db db, Order o, AppUser user) async {
+  BuildContext context,
+  Db db,
+  Order o,
+  AppUser user,
+) async {
   final ok = await confirmDialog(
     context,
     title: 'Xoá đơn ${o.code}?',
-    message: 'Đơn sẽ bị xoá HẲN khỏi hệ thống, KHÔNG thể hoàn tác. '
+    message:
+        'Đơn sẽ bị xoá HẲN khỏi hệ thống, KHÔNG thể hoàn tác. '
         'Chỉ dùng khi tạo nhầm. Nếu đơn có thật mà không giao nữa thì chọn '
         '"Hủy đơn" để giữ lại dấu vết.',
     confirm: 'Xoá hẳn',
@@ -552,12 +562,7 @@ class _Stepper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const labels = [
-      'Mới tạo',
-      'Đóng hàng',
-      'Giao hàng',
-      'Hoàn thành',
-    ];
+    const labels = ['Mới tạo', 'Đóng hàng', 'Giao hàng', 'Hoàn thành'];
     final stage = _stage;
     return SectionCard(
       child: Row(

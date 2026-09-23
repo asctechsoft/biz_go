@@ -9,10 +9,10 @@ import '../../core/permissions.dart';
 import '../../core/theme.dart';
 import '../../models/app_notification.dart';
 import '../../models/order.dart';
-import '../../models/order_filter.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/db.dart';
 import '../../widgets/common.dart';
+import 'order_tile.dart';
 
 /// Danh sách đơn — gom theo NGÀY, trong ngày sắp theo mức ưu tiên.
 ///
@@ -31,24 +31,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
   /// Danh sách phải dài tối thiểu bấy nhiêu đơn mới hiện hàng "Tải thêm".
   static const _loadMoreThreshold = 20;
 
-  OrderFilter _filter = OrderFilter.empty;
-
   /// Chỉ Chủ thấy tiền. Kho chỉ cần mã đơn + khách + trạng thái để soạn hàng.
   bool get _showMoney {
     final role = context.read<AuthProvider>().user?.role;
     return role != null && Perm.viewMoney(role);
-  }
-
-  /// Mở màn Lọc nhanh, nhận bộ lọc trả về.
-  Future<void> _openFilter() async {
-    final f = await context.push<OrderFilter>('/filter', extra: _filter);
-    if (f == null || !mounted) return;
-    setState(() {
-      _filter = f;
-      // Lọc khoảng ngày cũ hơn dữ liệu đang tải thì phải nới cửa sổ, kẻo lọc
-      // ra rỗng dù đơn có thật.
-      if (f.daysNeeded > _days) _days = f.daysNeeded;
-    });
   }
 
   @override
@@ -66,12 +52,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
             if (role != null && !Perm.viewDashboard(role))
               _NotifButton(role: role),
             IconButton(
-              icon: Badge(
-                isLabelVisible: _filter.isActive,
-                label: Text('${_filter.count}'),
-                child: const Icon(Icons.tune),
-              ),
-              onPressed: _openFilter,
+              icon: const Icon(Icons.search),
+              tooltip: 'Tìm đơn',
+              onPressed: () => context.push('/order-search'),
             ),
           ],
           bottom: const TabBar(
@@ -98,29 +81,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
             if (!snap.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
-            // Bộ lọc nhanh áp trước, tab lọc tiếp bên trên kết quả đó.
-            final all = snap.data!.where(_filter.matches).toList();
-            bool pending(Order o) =>
-                o.orderStatus != OrderStatus.CANCELLED &&
-                o.deliveryStatus != DeliveryStatus.DELIVERED &&
-                o.deliveryStatus != DeliveryStatus.ON_THE_WAY;
-            bool delivering(Order o) =>
-                o.deliveryStatus == DeliveryStatus.ON_THE_WAY ||
-                o.deliveryStatus == DeliveryStatus.ARRIVED;
-            bool done(Order o) => o.deliveryStatus == DeliveryStatus.DELIVERED;
-            return Column(
+            final all = snap.data!;
+            return TabBarView(
               children: [
-                if (_filter.isActive) _filterBar(),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _grouped(all),
-                      _grouped(all.where(pending).toList()),
-                      _grouped(all.where(delivering).toList()),
-                      _grouped(all.where(done).toList()),
-                    ],
-                  ),
-                ),
+                _grouped(all),
+                _grouped(all.where(isOrderPending).toList()),
+                _grouped(all.where(isOrderDelivering).toList()),
+                _grouped(all.where(isOrderDone).toList()),
               ],
             );
           },
@@ -132,52 +99,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 child: const Icon(Icons.add, color: Colors.white),
               )
             : null,
-      ),
-    );
-  }
-
-  /// Thanh báo đang lọc — không có thì user tưởng mất đơn.
-  Widget _filterBar() {
-    final f = _filter;
-    final parts = <String>[
-      if (f.custom != null)
-        '${fmtDate(f.custom!.start)} - ${fmtDate(f.custom!.end)}',
-      if (f.orderStatus != null) orderStatusUi(f.orderStatus!).label,
-      if (f.deliveryStatus != null) deliveryStatusUi(f.deliveryStatus!).label,
-      if (_showMoney && f.paymentStatus != null)
-        paymentStatusUi(f.paymentStatus!).label,
-      if (f.staffId != null) f.staffName,
-    ];
-    return Material(
-      color: AppColors.primaryLight,
-      child: InkWell(
-        onTap: _openFilter,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-          child: Row(
-            children: [
-              const Icon(Icons.filter_alt, size: 18, color: AppColors.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  parts.join(' · '),
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, size: 18),
-                color: AppColors.primary,
-                tooltip: 'Xoá bộ lọc',
-                onPressed: () =>
-                    setState(() => _filter = OrderFilter.empty),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -241,7 +162,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             for (final o in list)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: _tile(o),
+                child: OrderTile(o: o, showMoney: _showMoney),
               ),
             const SizedBox(height: 8),
           ],
@@ -315,114 +236,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
               label: const Text('Tải thêm 30 ngày'),
             ),
           ],
-        ),
-      );
-
-  // ---------- Thẻ đơn ----------
-
-  Widget _tile(Order o) {
-    // Chọn trạng thái nhiều thông tin nhất để hiện.
-    final StatusUi ui;
-    if (o.orderStatus == OrderStatus.CANCELLED) {
-      ui = orderStatusUi(OrderStatus.CANCELLED);
-    } else if (o.deliveryStatus != DeliveryStatus.WAITING_ASSIGNMENT) {
-      ui = deliveryStatusUi(o.deliveryStatus);
-    } else {
-      ui = warehouseStatusUi(o.warehouseStatus);
-    }
-    final urgent = o.priority && o.orderStatus != OrderStatus.CANCELLED;
-    return Card(
-      margin: EdgeInsets.zero,
-      // Viền đỏ mảnh bên trái để lướt mắt là thấy đơn gấp.
-      shape: urgent
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: AppColors.danger, width: 1.4),
-            )
-          : null,
-      child: ListTile(
-        onTap: () => context.push('/orders/${o.id}'),
-        leading: Avatar(o.customerName),
-        title: Row(
-          children: [
-            if (urgent) ...[
-              const _UrgentBadge(),
-              const SizedBox(width: 6),
-            ],
-            Flexible(
-              child: Text(
-                o.code,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ],
-        ),
-        subtitle: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(o.customerName),
-            // Ghi rõ "tạo" vì ngay dưới có thể là giờ xuất phát — hai mốc giờ
-            // trần trụi cạnh nhau thì không biết cái nào là cái nào.
-            Text(
-              _showMoney
-                  ? '${money(o.total)} · tạo ${fmtTime(o.createdAt)}'
-                  : 'Tạo lúc ${fmtTime(o.createdAt)}',
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            // Giờ dự kiến xuất phát — chính là thứ quyết định thứ tự đơn
-            // trong ngày, nên phải thấy ngay ở danh sách.
-            if (o.plannedDepartAt != null)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.schedule,
-                      size: 13, color: AppColors.primary),
-                  const SizedBox(width: 3),
-                  Flexible(
-                    child: Text(
-                      'Xuất phát ${fmtDepartAt(o.plannedDepartAt)}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-          ],
-        ),
-        trailing: StatusChip(ui, dense: true),
-        isThreeLine: true,
-      ),
-    );
-  }
-}
-
-/// Nhãn "GẤP" đỏ trên thẻ đơn ưu tiên.
-class _UrgentBadge extends StatelessWidget {
-  const _UrgentBadge();
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: AppColors.danger,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: const Text(
-          'GẤP',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 10,
-            fontWeight: FontWeight.w900,
-            letterSpacing: .5,
-          ),
         ),
       );
 }

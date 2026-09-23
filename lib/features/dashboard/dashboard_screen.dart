@@ -1088,42 +1088,40 @@ class _RecentCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: ui.color,
-                shape: BoxShape.circle,
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: ui.color,
+                  shape: BoxShape.circle,
+                ),
               ),
             ),
             const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  o.code,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                Text(
-                  fmtTime(o.createdAt),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 12),
+            // Mã đơn + giờ + tên khách xếp dọc CHUNG một cột full-width — tên
+            // khách dài xuống dòng thay vì bị cắt "...", không còn phải
+            // chen chúc với cột mã đơn bên cạnh.
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    o.customerName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    o.code,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
+                  Text(
+                    fmtTime(o.createdAt),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(o.customerName),
                   Text(
                     o.customerPhone,
                     style: const TextStyle(
@@ -1134,6 +1132,7 @@ class _RecentCard extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [

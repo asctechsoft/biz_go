@@ -98,20 +98,22 @@ class MoreScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          if (role != null && Perm.manageCustomers(role))
+          // Danh mục dùng chung — khách hàng, hàng hóa, đối tác vận chuyển.
+          if (role != null && Perm.manageCustomers(role)) ...[
+            const _SectionLabel('Danh mục'),
             _tile(
               context,
               Icons.people_alt_outlined,
               'Khách hàng',
               '/customers',
             ),
-          if (role != null && Perm.manageCustomers(role))
             _tile(
               context,
               Icons.account_balance_wallet_outlined,
               'Đơn ghi nợ',
               '/debts',
             ),
+          ],
           if (role != null && Perm.editCatalog(role))
             _tile(
               context,
@@ -126,6 +128,10 @@ class MoreScreen extends StatelessWidget {
               'Nhà xe',
               '/carriers',
             ),
+          // Vận hành hằng ngày — kho, giao hàng.
+          if (role != null &&
+              (Perm.warehouseOps(role) || Perm.startDelivery(role)))
+            const _SectionLabel('Vận hành'),
           if (role != null && Perm.warehouseOps(role))
             _tile(
               context,
@@ -140,6 +146,12 @@ class MoreScreen extends StatelessWidget {
               'Giao hàng',
               '/delivery',
             ),
+          // Quản trị hệ thống — tài khoản, phiếu in, nhật ký.
+          if (role != null &&
+              (Perm.manageUsers(role) ||
+                  Perm.editInvoiceSettings(role) ||
+                  Perm.viewAudit(role)))
+            const _SectionLabel('Quản trị'),
           if (role != null && Perm.manageUsers(role))
             _tile(
               context,
@@ -147,8 +159,6 @@ class MoreScreen extends StatelessWidget {
               'Quản lý người dùng',
               '/users',
             ),
-          if (role != null && Perm.viewReports(role))
-            _tile(context, Icons.bar_chart, 'Báo cáo', '/reports'),
           if (role != null && Perm.editInvoiceSettings(role))
             _tile(
               context,
@@ -178,13 +188,13 @@ class MoreScreen extends StatelessWidget {
               showDialog(
                 context: context,
                 barrierDismissible: false,
-                builder: (_) => const Center(
-                  child: CircularProgressIndicator(),
-                ),
+                builder: (_) =>
+                    const Center(child: CircularProgressIndicator()),
               );
               await auth.signOut();
               // Đóng dialog loading (router sẽ redirect về login).
-              if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+              if (context.mounted)
+                Navigator.of(context, rootNavigator: true).pop();
             },
           ),
         ],
@@ -272,6 +282,27 @@ class MoreScreen extends StatelessWidget {
   }
 }
 
+/// Tiêu đề nhóm trong danh sách Cài đặt — tách danh mục/vận hành/quản trị cho
+/// đỡ một dải dài dằng dặc không phân biệt được chỗ nào với chỗ nào.
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+        child: Text(
+          text.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textSecondary,
+            letterSpacing: .5,
+          ),
+        ),
+      );
+}
+
 /// Dòng "Phiên bản" — đọc số THẬT của bản build (`pubspec.yaml`) qua
 /// `package_info_plus`, KHÔNG gõ tay.
 ///
@@ -286,18 +317,14 @@ class _VersionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FutureBuilder<PackageInfo>(
-        future: PackageInfo.fromPlatform(),
-        builder: (context, snap) {
-          final info = snap.data;
-          return ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('Phiên bản'),
-            trailing: Text(
-              info == null
-                  ? '...'
-                  : '${info.version} (build ${info.buildNumber})',
-            ),
-          );
-        },
+    future: PackageInfo.fromPlatform(),
+    builder: (context, snap) {
+      final info = snap.data;
+      return ListTile(
+        leading: const Icon(Icons.info_outline),
+        title: const Text('Phiên bản'),
+        trailing: Text(info == null ? '...' : '${info.version}'),
       );
+    },
+  );
 }

@@ -14,6 +14,14 @@ import '../../widgets/common.dart';
 
 enum ReportPeriod { week, month, quarter, year }
 
+/// Màu thanh trong "Sản phẩm bán chạy" — lặp lại nếu quá 4 sản phẩm.
+const _productBarColors = [
+  AppColors.primary,
+  AppColors.warning,
+  AppColors.info,
+  Color(0xFF8E5FD9),
+];
+
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
   @override
@@ -23,38 +31,123 @@ class ReportsScreen extends StatefulWidget {
 class _ReportsScreenState extends State<ReportsScreen> {
   ReportPeriod _period = ReportPeriod.week;
 
-  /// Khoảng thời gian [từ, đến] theo kỳ đang chọn (đến = bây giờ).
+  /// Mốc ngày để tính kỳ — mặc định hôm nay. Bấm nút lịch chọn tháng khác thì
+  /// đổi mốc này để xem lại kỳ cũ; các kỳ Quý/Năm cũng suy theo mốc này nên
+  /// đổi nhất quán, không phải chỉ mỗi Tháng "nghe lời".
+  DateTime _anchor = DateTime.now();
+
+  bool get _isCurrentMonth {
+    final now = DateTime.now();
+    return _anchor.year == now.year && _anchor.month == now.month;
+  }
+
+  /// Khoảng thời gian [từ, đến] theo kỳ đang chọn, quanh [_anchor]. Kỳ đang
+  /// diễn ra (chứa hôm nay) thì đến = bây giờ; kỳ đã qua hẳn thì đến = cuối kỳ.
   DateTimeRange _range() {
     final now = DateTime.now();
+    DateTime endOfDay(DateTime d) =>
+        DateTime(d.year, d.month, d.day, 23, 59, 59);
     switch (_period) {
       case ReportPeriod.week:
+        final end = _anchor;
         return DateTimeRange(
-            start: DateTime(now.year, now.month, now.day)
+            start: DateTime(end.year, end.month, end.day)
                 .subtract(const Duration(days: 6)),
-            end: now);
+            end: end);
       case ReportPeriod.month:
-        return DateTimeRange(start: DateTime(now.year, now.month, 1), end: now);
-      case ReportPeriod.quarter:
-        final startMonth = ((now.month - 1) ~/ 3) * 3 + 1;
+        final start = DateTime(_anchor.year, _anchor.month, 1);
+        final lastDay = DateTime(_anchor.year, _anchor.month + 1, 0);
         return DateTimeRange(
-            start: DateTime(now.year, startMonth, 1), end: now);
+            start: start, end: _isCurrentMonth ? now : endOfDay(lastDay));
+      case ReportPeriod.quarter:
+        final startMonth = ((_anchor.month - 1) ~/ 3) * 3 + 1;
+        final start = DateTime(_anchor.year, startMonth, 1);
+        final lastDay = DateTime(_anchor.year, startMonth + 3, 0);
+        final isCurrent = _anchor.year == now.year &&
+            startMonth == ((now.month - 1) ~/ 3) * 3 + 1;
+        return DateTimeRange(
+            start: start, end: isCurrent ? now : endOfDay(lastDay));
       case ReportPeriod.year:
-        return DateTimeRange(start: DateTime(now.year, 1, 1), end: now);
+        final start = DateTime(_anchor.year, 1, 1);
+        final isCurrent = _anchor.year == now.year;
+        return DateTimeRange(
+            start: start,
+            end: isCurrent ? now : endOfDay(DateTime(_anchor.year, 12, 31)));
     }
   }
 
   String get _periodLabel {
-    final now = DateTime.now();
     switch (_period) {
       case ReportPeriod.week:
         return '7 ngày qua';
       case ReportPeriod.month:
-        return 'Tháng ${now.month}/${now.year}';
+        return 'Tháng ${_anchor.month}/${_anchor.year}';
       case ReportPeriod.quarter:
-        return 'Quý ${((now.month - 1) ~/ 3) + 1}/${now.year}';
+        return 'Quý ${((_anchor.month - 1) ~/ 3) + 1}/${_anchor.year}';
       case ReportPeriod.year:
-        return 'Năm ${now.year}';
+        return 'Năm ${_anchor.year}';
     }
+  }
+
+  /// Mở bottom sheet chọn tháng/năm muốn xem lại — thay [_anchor].
+  Future<void> _pickMonth() async {
+    var y = _anchor.year;
+    final now = DateTime.now();
+    final picked = await showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SheetHeader('Chọn tháng xem lại'),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    onPressed: () => setSheet(() => y--),
+                  ),
+                  Text('$y',
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w700)),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right),
+                    onPressed: y >= now.year ? null : () => setSheet(() => y++),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: GridView.count(
+                  crossAxisCount: 3,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 2.4,
+                  children: [
+                    for (var m = 1; m <= 12; m++)
+                      _MonthCell(
+                        label: 'Th $m',
+                        selected: y == _anchor.year && m == _anchor.month,
+                        // Chưa tới tháng đó thì chưa có dữ liệu để xem.
+                        enabled: DateTime(y, m, 1)
+                            .isBefore(DateTime(now.year, now.month + 1, 1)),
+                        onTap: () => Navigator.pop(ctx, DateTime(y, m, 1)),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked != null) setState(() => _anchor = picked);
   }
 
   bool _inRange(DateTime t, DateTimeRange r) {
@@ -169,52 +262,65 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     _metric('Tổng đơn', '${active.length}',
                         AppColors.textPrimary),
                   ]),
-                  const SizedBox(height: 20),
-                  SectionCard(
-                    child: Column(
-                      children: [
-                        KVRow('Đơn hoàn thành', '$completed'),
-                        KVRow('Đơn giao thất bại', '$failed'),
-                        KVRow('Đơn đã hủy', '$cancelled'),
-                      ],
+                  // Tab Năm gộp cả 12 tháng nên 3 con số này không còn nói
+                  // lên điều gì rõ ràng (vd "đơn hoàn thành" cả năm) — ẩn đi,
+                  // các kỳ ngắn hơn (tuần/tháng/quý) vẫn hiện bình thường.
+                  if (_period != ReportPeriod.year) ...[
+                    const SizedBox(height: 20),
+                    SectionCard(
+                      child: Column(
+                        children: [
+                          KVRow('Đơn hoàn thành', '$completed'),
+                          KVRow('Đơn giao thất bại', '$failed'),
+                          KVRow('Đơn đã hủy', '$cancelled'),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 20),
                   const Text('Sản phẩm bán chạy',
                       style:
                           TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
-                  SectionCard(
-                    child: Column(
-                      children: [
-                        if (topProducts.isEmpty)
-                          const Text('Chưa có dữ liệu',
-                              style: TextStyle(color: AppColors.textSecondary)),
-                        for (final e in topProducts.take(10))
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: Row(
-                              children: [
-                                Expanded(child: Text(e.key)),
-                                Text('x${e.value.$1}',
-                                    style: const TextStyle(
-                                        color: AppColors.textSecondary)),
-                                const SizedBox(width: 12),
-                                Text(money(e.value.$2),
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w600)),
-                              ],
+                  Builder(builder: (context) {
+                    final top = topProducts.take(10).toList();
+                    // Thanh dài/ngắn so theo mục doanh số cao nhất — vẫn thấy
+                    // rõ ai hơn ai dù góc phải giờ hiện số lượng bán, không
+                    // phải %.
+                    final maxRevenue =
+                        top.isEmpty ? 0 : top.first.value.$2;
+                    return SectionCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (top.isEmpty)
+                            const Text('Chưa có dữ liệu',
+                                style: TextStyle(color: AppColors.textSecondary)),
+                          for (final (i, e) in top.indexed)
+                            Padding(
+                              padding:
+                                  EdgeInsets.only(bottom: i == top.length - 1 ? 0 : 16),
+                              child: _ProductBar(
+                                label: e.key,
+                                amount: e.value.$2,
+                                qty: e.value.$1,
+                                barFactor: maxRevenue == 0
+                                    ? 0
+                                    : e.value.$2 / maxRevenue,
+                                color: _productBarColors[
+                                    i % _productBarColors.length],
+                              ),
                             ),
-                          ),
-                      ],
-                    ),
-                  ),
+                        ],
+                      ),
+                    );
+                  }),
                   const SizedBox(height: 20),
                   Text('Doanh số · $_periodLabel',
                       style: const TextStyle(
                           fontSize: 16, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
-                  _PeriodChart(orders: active, period: _period),
+                  _PeriodChart(orders: active, period: _period, range: range),
                   const SizedBox(height: 20),
                   const Text('Công nợ theo khách',
                       style:
@@ -244,17 +350,31 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ReportPeriod.quarter => 'Quý',
           ReportPeriod.year => 'Năm',
         };
-    return Row(
+    // Một Wrap DUY NHẤT cho cả chip kỳ lẫn nút chọn tháng/về hiện tại — tách
+    // riêng nút lịch ra ngoài Row từng làm nó lẻ loi khi "Năm" xuống dòng.
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         for (final p in ReportPeriod.values)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(label(p)),
-              selected: _period == p,
-              onSelected: (_) => setState(() => _period = p),
-            ),
+          ChoiceChip(
+            label: Text(label(p)),
+            selected: _period == p,
+            onSelected: (_) => setState(() => _period = p),
           ),
+        // Chỉ hiện khi đang xem lại tháng cũ — bấm về ngay kỳ hiện tại.
+        if (!_isCurrentMonth)
+          ActionChip(
+            avatar: const Icon(Icons.today, size: 16),
+            label: const Text('Hiện tại'),
+            onPressed: () => setState(() => _anchor = DateTime.now()),
+          ),
+        ActionChip(
+          avatar: const Icon(Icons.calendar_month, size: 16),
+          label: const Text('Chọn tháng'),
+          onPressed: _pickMonth,
+        ),
       ],
     );
   }
@@ -286,11 +406,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
 class _PeriodChart extends StatelessWidget {
   final List<Order> orders;
   final ReportPeriod period;
-  const _PeriodChart({required this.orders, required this.period});
+  final DateTimeRange range;
+  const _PeriodChart(
+      {required this.orders, required this.period, required this.range});
 
-  /// Danh sách cột (nhãn, tổng tiền) theo kỳ.
+  /// Danh sách cột (nhãn, tổng tiền) theo kỳ — dựa thẳng vào [range] (đã tính
+  /// sẵn "đến = bây giờ" cho kỳ đang diễn ra, "đến = cuối kỳ" cho kỳ đã qua)
+  /// nên chart tự vẽ đủ cột dù đang xem tháng/quý/năm hiện tại hay đã cũ.
   List<(String, int)> _buckets() {
-    final now = DateTime.now();
     int sumDay(DateTime d) => orders
         .where((o) =>
             o.createdAt.year == d.year &&
@@ -301,32 +424,27 @@ class _PeriodChart extends StatelessWidget {
         .where((o) => o.createdAt.year == y && o.createdAt.month == m)
         .fold<int>(0, (s, o) => s + o.total);
 
+    final start = DateTime(range.start.year, range.start.month, range.start.day);
     switch (period) {
       case ReportPeriod.week:
         const wd = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
         return [
           for (var i = 0; i < 7; i++)
             () {
-              final d = DateTime(now.year, now.month, now.day)
-                  .subtract(Duration(days: 6 - i));
+              final d = start.add(Duration(days: i));
               return (wd[d.weekday - 1], sumDay(d));
             }()
         ];
       case ReportPeriod.month:
         return [
-          for (var day = 1; day <= now.day; day++)
-            ('$day', sumDay(DateTime(now.year, now.month, day)))
+          for (var day = 1; day <= range.end.day; day++)
+            ('$day', sumDay(DateTime(start.year, start.month, day)))
         ];
       case ReportPeriod.quarter:
-        final startMonth = ((now.month - 1) ~/ 3) * 3 + 1;
-        return [
-          for (var m = startMonth; m <= now.month; m++)
-            ('T$m', sumMonth(now.year, m))
-        ];
       case ReportPeriod.year:
         return [
-          for (var m = 1; m <= now.month; m++)
-            ('T$m', sumMonth(now.year, m))
+          for (var m = start.month; m <= range.end.month; m++)
+            ('T$m', sumMonth(start.year, m))
         ];
     }
   }
@@ -380,6 +498,86 @@ class _PeriodChart extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Một dòng trong "Sản phẩm bán chạy": tên + doanh số + % rồi tới thanh màu,
+/// thay cho dòng chữ thuần trước đây — nhìn ra ngay ai hơn ai mà không phải
+/// so số.
+class _ProductBar extends StatelessWidget {
+  final String label;
+  final int amount;
+  final int qty;
+  final double barFactor;
+  final Color color;
+  const _ProductBar({
+    required this.label,
+    required this.amount,
+    required this.qty,
+    required this.barFactor,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Text(money(amount),
+                  style: const TextStyle(
+                      fontSize: 13, color: AppColors.textSecondary)),
+              const Spacer(),
+              Text('x$qty',
+                  style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: barFactor.clamp(0, 1),
+              minHeight: 8,
+              backgroundColor: AppColors.border,
+              color: color,
+            ),
+          ),
+        ],
+      );
+}
+
+/// Ô chọn 1 tháng trong lưới 12 tháng của bottom sheet chọn tháng xem lại.
+class _MonthCell extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+  const _MonthCell({
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => ChoiceChip(
+        label: Text(
+          label,
+          overflow: TextOverflow.visible,
+          softWrap: false,
+          style: TextStyle(color: selected ? Colors.white : null),
+        ),
+        showCheckmark: false,
+        selected: selected,
+        selectedColor: AppColors.primary,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+        onSelected: enabled ? (_) => onTap() : null,
+      );
 }
 
 class _DebtByCustomer extends StatelessWidget {

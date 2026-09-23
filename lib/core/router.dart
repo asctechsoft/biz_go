@@ -7,7 +7,6 @@ import '../features/customers/customer_edit_screen.dart';
 import '../features/customers/customers_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/dashboard/notifications_screen.dart';
-import '../features/dashboard/quick_filter_screen.dart';
 import '../features/delivery/delivery_hub_screen.dart';
 import '../features/more/audit_log_screen.dart';
 import '../features/more/carriers_screen.dart';
@@ -18,11 +17,11 @@ import '../features/more/reports_screen.dart';
 import '../features/more/user_management_screen.dart';
 import '../features/orders/create/create_order_screen.dart';
 import '../features/orders/order_detail_screen.dart';
+import '../features/orders/order_search_screen.dart';
 import '../features/orders/orders_screen.dart';
 import '../features/products/product_detail_screen.dart';
 import '../features/products/products_screen.dart';
 import '../features/warehouse/warehouse_screen.dart';
-import '../models/order_filter.dart';
 import '../providers/auth_provider.dart';
 import '../features/splash/splash_screen.dart';
 import '../shell/main_shell.dart';
@@ -83,6 +82,7 @@ GoRouter buildRouter(AuthProvider auth) {
             path: '/delivery',
             builder: (c, s) => const DeliveryHubScreen(),
           ),
+          GoRoute(path: '/reports', builder: (c, s) => const ReportsScreen()),
           GoRoute(path: '/more', builder: (c, s) => const MoreScreen()),
         ],
       ),
@@ -93,13 +93,8 @@ GoRouter buildRouter(AuthProvider auth) {
         builder: (c, s) => const NotificationsScreen(),
       ),
       GoRoute(
-        path: '/filter',
-        // `extra` = bộ lọc đang áp dụng, để mở lên thấy đúng thứ đang lọc.
-        builder: (c, s) => QuickFilterScreen(
-          initial: s.extra is OrderFilter
-              ? s.extra as OrderFilter
-              : OrderFilter.empty,
-        ),
+        path: '/order-search',
+        builder: (c, s) => const OrderSearchScreen(),
       ),
       GoRoute(
         path: '/orders/create',
@@ -125,7 +120,6 @@ GoRouter buildRouter(AuthProvider auth) {
             ProductDetailScreen(productId: s.pathParameters['id']!),
       ),
       GoRoute(path: '/warehouse', builder: (c, s) => const WarehouseScreen()),
-      GoRoute(path: '/reports', builder: (c, s) => const ReportsScreen()),
       GoRoute(path: '/users', builder: (c, s) => const UserManagementScreen()),
       GoRoute(path: '/audit', builder: (c, s) => const AuditLogScreen()),
       GoRoute(path: '/carriers', builder: (c, s) => const CarriersScreen()),
