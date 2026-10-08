@@ -1,13 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/enums.dart';
 import '../../core/formatters.dart';
+import '../../core/permissions.dart';
 import '../../core/theme.dart';
 import '../../models/order.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/db.dart';
 import '../../widgets/common.dart';
 
 class PaymentResult {
+  /// Phần thu cho CHÍNH đơn này.
   final int amount;
+
+  /// Phần thu thêm cho công nợ cũ của khách (đơn khác) — 0 nếu không có.
+  /// Người gọi phải ghi riêng bằng `Db.collectCustomerDebt` SAU khi ghi xong
+  /// phần [amount], vì đó là các payment của đơn khác.
+  final int debtAmount;
   final PaymentMethod method;
   final String note;
 
@@ -15,7 +25,8 @@ class PaymentResult {
   /// với `allowDebt: true` mới trả về `true` được. [amount] luôn 0 khi cờ
   /// này bật, [method] không có ý nghĩa (không sinh payment nào).
   final bool isDebt;
-  PaymentResult(this.amount, this.method, this.note, {this.isDebt = false});
+  PaymentResult(this.amount, this.method, this.note,
+      {this.isDebt = false, this.debtAmount = 0});
 }
 
 /// Ô chọn **hình thức thu tiền** — bấm vào mở bottom sheet chọn.
@@ -101,9 +112,26 @@ Future<PaymentResult?> showPaymentSheet(
   BuildContext context,
   Order order, {
   bool allowDebt = false,
-}) {
+}) async {
   final remaining = order.remaining > 0 ? order.remaining : 0;
-  final amountC = TextEditingController(text: moneyPlain(remaining));
+
+  // Công nợ cũ của khách (ngoài đơn này) — chỉ Chủ thấy, cùng quyền với dialog
+  // "Khách đang nợ". `customers.debt` đã gồm phần còn thiếu của đơn này nên
+  // phải trừ ra. Đọc lỗi/khách đã xoá → coi như không có nợ cũ.
+  var oldDebt = 0;
+  final role = context.read<AuthProvider>().user?.role;
+  if (role != null &&
+      Perm.manageCustomers(role) &&
+      order.orderStatus != OrderStatus.CANCELLED) {
+    try {
+      final c = await context.read<Db>().customer(order.customerId).first;
+      oldDebt = c.debt - remaining > 0 ? c.debt - remaining : 0;
+    } catch (_) {}
+  }
+  if (!context.mounted) return null;
+
+  final amountC =
+      TextEditingController(text: moneyPlain(remaining + oldDebt));
   final noteC = TextEditingController();
   PaymentMethod method = PaymentMethod.cash;
 
@@ -115,7 +143,18 @@ Future<PaymentResult?> showPaymentSheet(
         final collected = int.tryParse(
                 amountC.text.replaceAll(RegExp(r'[^0-9]'), '')) ??
             0;
-        final afterRemaining = order.total - order.paidAmount - collected;
+        // Thu vào đơn này trước, dư mới chuyển sang nợ cũ.
+        var orderPart = collected;
+        var debtPart = 0;
+        if (oldDebt > 0) {
+          orderPart = collected < remaining ? collected : remaining;
+          debtPart = collected - orderPart;
+          if (debtPart > oldDebt) {
+            orderPart += debtPart - oldDebt;
+            debtPart = oldDebt;
+          }
+        }
+        final afterRemaining = remaining + oldDebt - collected;
         return Padding(
           padding: EdgeInsets.only(
               bottom: MediaQuery.of(ctx).viewInsets.bottom +
@@ -138,8 +177,14 @@ Future<PaymentResult?> showPaymentSheet(
                 KVRow('Tổng tiền', money(order.total)),
                 KVRow('Đã trả trước', money(order.prepaid)),
                 KVRow('Đã thu', money(order.paidAmount)),
-                KVRow('Cần thu (COD)', money(remaining),
+                KVRow(oldDebt > 0 ? 'Cần thu đơn này (COD)' : 'Cần thu (COD)',
+                    money(remaining),
                     valueColor: AppColors.danger, bold: true),
+                if (oldDebt > 0) ...[
+                  KVRow('Công nợ cũ', money(oldDebt)),
+                  KVRow('Tổng cần thu', money(remaining + oldDebt),
+                      valueColor: AppColors.danger, bold: true),
+                ],
                 const Divider(),
                 const SizedBox(height: 4),
                 TextField(
@@ -161,6 +206,10 @@ Future<PaymentResult?> showPaymentSheet(
                   decoration: const InputDecoration(labelText: 'Ghi chú'),
                 ),
                 const SizedBox(height: 12),
+                if (oldDebt > 0) ...[
+                  KVRow('Thu cho đơn này', money(orderPart)),
+                  KVRow('Thu công nợ cũ', money(debtPart)),
+                ],
                 KVRow(
                   afterRemaining > 0 ? 'Còn thiếu' : 'Trạng thái',
                   afterRemaining > 0 ? money(afterRemaining) : 'Đủ tiền',
@@ -172,7 +221,8 @@ Future<PaymentResult?> showPaymentSheet(
                 ElevatedButton(
                   onPressed: () => Navigator.pop(
                     ctx,
-                    PaymentResult(collected, method, noteC.text.trim()),
+                    PaymentResult(orderPart, method, noteC.text.trim(),
+                        debtAmount: debtPart),
                   ),
                   child: const Text('Xác nhận'),
                 ),

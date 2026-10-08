@@ -91,6 +91,17 @@ Future<bool> deliverOrder(
       note: result.note,
       markAsDebt: result.isDebt,
     );
+    // Phần thu thêm cho công nợ cũ (đơn khác) — ghi SAU phần của đơn này.
+    if (result.debtAmount > 0) {
+      await db.collectCustomerDebt(
+        customerId: o.customerId,
+        amount: result.debtAmount,
+        method: result.method,
+        actorId: me.id,
+        actorName: me.name,
+        note: result.note,
+      );
+    }
   } catch (e) {
     debugPrint('DELIVER-ORDER ERROR: $e');
     if (context.mounted) {

@@ -238,6 +238,17 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   int get _total => _subtotal + _int(_shipping) - _int(_discount);
   int get _codRemaining => _total - _int(_prepaid);
 
+  /// Nợ cũ của khách đang chọn, chỉ với vai trò quản được khách hàng (Chủ) —
+  /// cùng điều kiện với dialog "Khách đang nợ". Sửa đơn không có `_customer`.
+  int get _oldDebt {
+    final c = _customer;
+    final role = context.read<AuthProvider>().user?.role;
+    if (_isEdit || c == null || role == null || !Perm.manageCustomers(role)) {
+      return 0;
+    }
+    return c.debt > 0 ? c.debt : 0;
+  }
+
   /// Được chốt tiền ngay lúc tạo đơn (ô "Khách trả trước" + trạng thái thanh
   /// toán) — chỉ Chủ. Sale tạo đơn thì đơn để nguyên UNPAID.
   bool get _canCollect {
@@ -1227,6 +1238,16 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       KVRow('Khách trả trước', money(_int(_prepaid))),
                       KVRow('Còn phải thu (COD)', money(_codRemaining),
                           valueColor: AppColors.danger, bold: true),
+                      // Công nợ cũ chỉ để Chủ xem tổng khách cần trả — KHÔNG
+                      // cộng vào đơn (đơn vẫn lẻ, nợ vẫn nằm ở hồ sơ khách).
+                      if (_oldDebt > 0) ...[
+                        const Divider(),
+                        KVRow('Công nợ cũ', money(_oldDebt)),
+                        KVRow('Tổng khách cần trả',
+                            money((_codRemaining > 0 ? _codRemaining : 0) +
+                                _oldDebt),
+                            valueColor: AppColors.danger, bold: true),
+                      ],
                     ],
                   ],
                 ),

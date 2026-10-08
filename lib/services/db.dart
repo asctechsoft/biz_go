@@ -931,9 +931,15 @@ class Db {
           ).toMap(),
         ]),
       });
+      // Công nợ khách = tổng phần còn thiếu (>0) của từng đơn, nên chỉ trừ đúng
+      // phần còn thiếu của đơn này. Thu dư (nhập quá số cần thu) mà trừ hết
+      // `amount` thì nợ khách thấp hơn tổng các đơn còn nợ — lệch sổ câm. Kẹp
+      // như `editOrder`/`cancelOrder`.
+      final before = current.total - current.paidAmount;
+      final debtCut = before <= 0 ? 0 : (amount < before ? amount : before);
       tx.set(custRef, {
         'totalPaid': FieldValue.increment(amount),
-        'debt': FieldValue.increment(-amount),
+        'debt': FieldValue.increment(-debtCut),
       }, SetOptions(merge: true));
     });
 

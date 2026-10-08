@@ -9,11 +9,10 @@ import 'enums.dart';
 class Perm {
   static bool owner(UserRole r) => r == UserRole.owner;
 
-  /// Chủ tạo đơn đầy đủ (sửa giá, đặt cọc, trạng thái thanh toán...). Sale
-  /// cũng tạo được — nhưng KHÔNG có [editOrder]/[deleteOrder]/[cancelOrder]
-  /// nên đơn tạo xong là xong, đụng gì tiếp phải nhờ Chủ.
-  static bool createOrder(UserRole r) =>
-      r == UserRole.owner || r == UserRole.sale;
+  /// Chủ tạo đơn đầy đủ (sửa giá, đặt cọc, trạng thái thanh toán...). Sale và
+  /// Kiểm hàng cũng tạo được — nhưng KHÔNG có [editOrder]/[deleteOrder]/
+  /// [cancelOrder] nên đơn tạo xong là xong, đụng gì tiếp phải nhờ Chủ.
+  static bool createOrder(UserRole r) => true;
 
   /// Sửa đơn đã tạo (thêm/bớt hàng, đổi giá, phí). Chỉ Chủ — đụng vào tiền.
   static bool editOrder(UserRole r) => r == UserRole.owner;

@@ -302,6 +302,8 @@ class OrderDetailScreen extends StatelessWidget {
               if (showMoney) ...[
                 const SizedBox(height: 12),
                 _PaymentCard(order: o),
+                if (role != null && Perm.manageCustomers(role))
+                  _OldDebtCard(order: o),
               ],
               const SizedBox(height: 12),
               _TimelineCard(order: o),
@@ -636,6 +638,41 @@ class _PaymentCard extends StatelessWidget {
   }
 }
 
+/// Công nợ của khách ngoài đơn này + tổng cần thu — chỉ để Chủ nắm, đơn vẫn lẻ.
+/// `customers.debt` đã gồm phần còn thiếu của đơn này nên phải trừ ra.
+class _OldDebtCard extends StatelessWidget {
+  final Order order;
+  const _OldDebtCard({required this.order});
+  @override
+  Widget build(BuildContext context) {
+    if (order.orderStatus == OrderStatus.CANCELLED) return const SizedBox.shrink();
+    final thisRemaining = order.remaining > 0 ? order.remaining : 0;
+    return StreamBuilder<Customer>(
+      stream: context.read<Db>().customer(order.customerId),
+      builder: (context, snap) {
+        final c = snap.data;
+        if (c == null) return const SizedBox.shrink();
+        final oldDebt = c.debt - thisRemaining;
+        if (oldDebt <= 0) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: SectionCard(
+            child: Column(
+              children: [
+                KVRow('Còn thiếu đơn này', money(thisRemaining)),
+                KVRow('Công nợ cũ', money(oldDebt)),
+                const Divider(),
+                KVRow('Tổng khách cần trả', money(thisRemaining + oldDebt),
+                    valueColor: AppColors.danger, bold: true),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _TimelineCard extends StatelessWidget {
   final Order order;
   const _TimelineCard({required this.order});
@@ -794,7 +831,9 @@ class _ActionBar extends StatelessWidget {
     String uname,
   ) async {
     final result = await showPaymentSheet(context, o);
-    if (result == null || result.amount <= 0) return;
+    if (result == null || (result.amount <= 0 && result.debtAmount <= 0)) {
+      return;
+    }
     await db.recordPayment(
       order: o,
       amount: result.amount,
@@ -803,6 +842,16 @@ class _ActionBar extends StatelessWidget {
       actorName: uname,
       note: result.note,
     );
+    if (result.debtAmount > 0) {
+      await db.collectCustomerDebt(
+        customerId: o.customerId,
+        amount: result.debtAmount,
+        method: result.method,
+        actorId: uid,
+        actorName: uname,
+        note: result.note,
+      );
+    }
     if (context.mounted) toast(context, 'Đã ghi nhận thu tiền');
   }
 }

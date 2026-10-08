@@ -54,9 +54,27 @@ class ThousandsInputFormatter extends TextInputFormatter {
     final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (digits.isEmpty) return const TextEditingValue();
     final formatted = _currency.format(int.parse(digits));
+
+    // Giữ con trỏ đúng chỗ người dùng đang sửa: đếm số CHỮ SỐ đứng trước con
+    // trỏ trong text vừa gõ, rồi tìm vị trí có đúng chừng đó chữ số trong chuỗi
+    // đã chèn dấu chấm. Đặt cứng về cuối thì xoá/chèn giữa số bị nhảy ra cuối.
+    final cursor = newValue.selection.baseOffset;
+    var offset = formatted.length;
+    if (cursor >= 0 && cursor < newValue.text.length) {
+      final digitsBefore = newValue.text
+          .substring(0, cursor)
+          .replaceAll(RegExp(r'[^0-9]'), '')
+          .length;
+      var seen = 0;
+      offset = 0;
+      while (offset < formatted.length && seen < digitsBefore) {
+        if (RegExp(r'[0-9]').hasMatch(formatted[offset])) seen++;
+        offset++;
+      }
+    }
     return TextEditingValue(
       text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
+      selection: TextSelection.collapsed(offset: offset),
     );
   }
 }
