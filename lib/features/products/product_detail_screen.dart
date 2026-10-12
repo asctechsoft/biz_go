@@ -672,36 +672,51 @@ class _PackagingScreen extends StatelessWidget {
           stream: db.units(),
           builder: (ctx, snap) {
             final units = snap.data ?? Db.defaultUnits;
+            // Danh sách đơn vị dài dần (người dùng tự thêm) mà sheet bị khống
+            // chế chiều cao → Column cứng sẽ tràn đáy. Tiêu đề đứng yên, phần
+            // còn lại cuộn trong `Flexible`.
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SheetHeader('Chọn đơn vị'),
-                for (final u in units)
-                  ListTile(
-                    leading: const Icon(
-                      Icons.straighten,
-                      color: AppColors.primary,
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final u in units)
+                          ListTile(
+                            leading: const Icon(
+                              Icons.straighten,
+                              color: AppColors.primary,
+                            ),
+                            title: Text(
+                              u,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            trailing: current == u
+                                ? const Icon(Icons.check,
+                                    color: AppColors.primary)
+                                : null,
+                            onTap: () => Navigator.pop(ctx, u),
+                          ),
+                        ListTile(
+                          leading:
+                              const Icon(Icons.add, color: AppColors.primary),
+                          title: const Text('Thêm đơn vị khác'),
+                          onTap: () async {
+                            final custom = await _addUnitDialog(ctx);
+                            if (custom == null || custom.isEmpty) return;
+                            await db.addUnit(custom); // lưu vĩnh viễn vào list
+                            if (ctx.mounted) Navigator.pop(ctx, custom);
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                     ),
-                    title: Text(
-                      u,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    trailing: current == u
-                        ? const Icon(Icons.check, color: AppColors.primary)
-                        : null,
-                    onTap: () => Navigator.pop(ctx, u),
                   ),
-                ListTile(
-                  leading: const Icon(Icons.add, color: AppColors.primary),
-                  title: const Text('Thêm đơn vị khác'),
-                  onTap: () async {
-                    final custom = await _addUnitDialog(ctx);
-                    if (custom == null || custom.isEmpty) return;
-                    await db.addUnit(custom); // lưu vĩnh viễn vào list
-                    if (ctx.mounted) Navigator.pop(ctx, custom);
-                  },
                 ),
-                const SizedBox(height: 8),
               ],
             );
           },
